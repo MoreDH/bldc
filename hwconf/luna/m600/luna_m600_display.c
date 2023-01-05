@@ -243,17 +243,17 @@ static void set_assist_level(uint8_t assist_code) {
 	luna_settings.assist_code = assist_code;
 
 	switch (assist_code) {
-		case PAS_LEVEL_0: current_scale = 0.0; break;
-		case PAS_LEVEL_1: current_scale = 1.0 / 9.0; break;
-		case PAS_LEVEL_2: current_scale = 2.0 / 9.0; break;
-		case PAS_LEVEL_3: current_scale = 3.0 / 9.0; break;
-		case PAS_LEVEL_4: current_scale = 4.0 / 9.0; break;
-		case PAS_LEVEL_5: current_scale = 5.0 / 9.0; break;
-		case PAS_LEVEL_6: current_scale = 6.0 / 9.0; break;
-		case PAS_LEVEL_7: current_scale = 7.0 / 9.0; break;
-		case PAS_LEVEL_8: current_scale = 8.0 / 9.0; break;
-		case PAS_LEVEL_9: current_scale = 1.0; break;
-		case PAS_LEVEL_WALK: current_scale = 1.0; break;
+		case PAS_LEVEL_0:		current_scale = 0.00; break;
+		case PAS_LEVEL_1:		current_scale = 0.10; break;
+		case PAS_LEVEL_2:		current_scale = 0.13; break;
+		case PAS_LEVEL_3:		current_scale = 0.18; break;
+		case PAS_LEVEL_4:		current_scale = 0.24; break;
+		case PAS_LEVEL_5:		current_scale = 0.34; break;
+		case PAS_LEVEL_6:		current_scale = 0.42; break;
+		case PAS_LEVEL_7:		current_scale = 0.56; break;
+		case PAS_LEVEL_8:		current_scale = 0.75; break;
+		case PAS_LEVEL_9:		current_scale = 1.00; break;
+		case PAS_LEVEL_WALK:	current_scale = 1.00; break;
 		default: return;
 	}
 
@@ -270,10 +270,9 @@ static void set_assist_level(uint8_t assist_code) {
 	}
 }
 
-
-			float distance;
-			float time_since_display_change=0;
-			uint16_t distance_display;
+float distance;
+float time_since_display_change=0;
+uint16_t distance_display;
 			
 /**
  * State machine for display functions and error handling  
