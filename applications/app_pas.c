@@ -237,7 +237,7 @@ static THD_FUNCTION(pas_thread, arg) {
 			case PAS_CTRL_TYPE_TORQUE:
 			{
 				torque_ratio = hw_get_PAS_torque();
-				output = torque_ratio * config.current_scaling * sub_scaling;
+				output = utils_throttle_curve(torque_ratio, -1.0, 0.0, 2) * config.current_scaling * sub_scaling;
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */
