@@ -3,6 +3,7 @@
 * PAS pedal timeout 5 -> 3s.
 * More consistent PAS loop times.
 * PAS torque filtered new butterworth 2nd order low pass filter.
+* PAS1-9 is now progressive(0.15/1.267) with slow walk mode.
 
 === FW 6.00 ===
 * Added stack checks.
