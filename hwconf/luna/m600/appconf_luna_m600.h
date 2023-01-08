@@ -28,7 +28,7 @@
 #define APPCONF_PERMANENT_UART_ENABLED 1
 
 // Shutdown Mode
-#define APPCONF_SHUTDOWN_MODE 6
+#define APPCONF_SHUTDOWN_MODE 7
 
 // CAN Mode
 #define APPCONF_CAN_MODE 0
@@ -142,7 +142,7 @@
 #define APPCONF_ADC_VOLTAGE2_INVERTED 1
 
 // Throttle Expo
-#define APPCONF_ADC_THROTTLE_EXP 0
+#define APPCONF_ADC_THROTTLE_EXP -1
 
 // Throttle Expo Brake
 #define APPCONF_ADC_THROTTLE_EXP_BRAKE 0
@@ -151,7 +151,7 @@
 #define APPCONF_ADC_THROTTLE_EXP_MODE 2
 
 // Positive Ramping Time
-#define APPCONF_ADC_RAMP_TIME_POS 0.3
+#define APPCONF_ADC_RAMP_TIME_POS 0.4
 
 // Negative Ramping Time
 #define APPCONF_ADC_RAMP_TIME_NEG 0.1
@@ -418,10 +418,10 @@
 #define APPCONF_PAS_USE_FILTER 1
 
 // Positive Ramping Time
-#define APPCONF_PAS_RAMP_TIME_POS 0.3
+#define APPCONF_PAS_RAMP_TIME_POS 0.5
 
 // Negative Ramping Time
-#define APPCONF_PAS_RAMP_TIME_NEG 0.2
+#define APPCONF_PAS_RAMP_TIME_NEG 0.3
 
 // Update Rate
 #define APPCONF_PAS_UPDATE_RATE_HZ 500
