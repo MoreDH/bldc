@@ -17,9 +17,10 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
-#include  "digital_filter.h"
 #include  <math.h>
 #include  <stdint.h>
+#include  "utils_math.h"
+#include  "digital_filter.h"
 
 // Found at http://paulbourke.net/miscellaneous//dft/
 void filter_fft(int dir, int m, float *real, float *imag) {
@@ -262,4 +263,52 @@ void biquad_config(Biquad *biquad, BiquadType type, float Fc) {
 void biquad_reset(Biquad *biquad) {
 	biquad->z1 = 0;
 	biquad->z2 = 0;
+}
+
+/**
+ * 2nd order butterworth low pass filter, from stackexchange (lost link) 
+ */
+float filter_bw2(float sampleRateHz, float cutoffFreqHz, float sample, float *samplePrev1, float *samplePrev2, float *filterPrev1, float *filterPrev2)
+{
+	const float MinHz = 0.001;
+	
+	sampleRateHz = fmax(sampleRateHz, MinHz); // stay above min
+	cutoffFreqHz = fmax(cutoffFreqHz, MinHz); // stay above min
+	cutoffFreqHz = fmin(cutoffFreqHz, sampleRateHz); // cutoff must be below sample rate
+	
+	float wd = 2 * M_PI * cutoffFreqHz / sampleRateHz;
+	float a = tanf(wd / 2);
+
+	float aa = a * a;
+	float aP = 1 + a * (float) sqrt(2) + aa;
+	float aM = 1 - a * (float) sqrt(2) + aa;
+
+	float k = aa / aP;
+
+	float a1 = 2 * (aa - 1) / aP;
+	float a2 = aM / aP;
+	
+	float b1 = 2;
+	float b2 = 1;
+
+	// Protect against NAN or INFINITY corrupting filter
+	if( UTILS_IS_INF(sample) || UTILS_IS_NAN(sample) ) // bad sample
+	{
+		sample = *samplePrev1;
+	}
+	
+	float filter =
+		k * sample +
+		k * b1 * (*samplePrev1) +
+		k * b2 * (*samplePrev2) -
+		a1 * (*filterPrev1) -
+		a2 * (*filterPrev2);
+
+	*samplePrev2 = *samplePrev1;
+	*samplePrev1 = sample;
+
+	*filterPrev2 = *filterPrev1;
+	*filterPrev1 = filter;
+	
+	return filter;
 }
