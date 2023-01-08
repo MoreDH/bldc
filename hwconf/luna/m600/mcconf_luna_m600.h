@@ -145,10 +145,10 @@
 #define MCCONF_HALL_ERPM 2000
 
 // Current KP
-#define MCCONF_FOC_CURRENT_KP 0.106
+#define MCCONF_FOC_CURRENT_KP 0.256
 
 // Current KI
-#define MCCONF_FOC_CURRENT_KI 47.69
+#define MCCONF_FOC_CURRENT_KI 57.59
 
 // Zero Vector Frequency
 #define MCCONF_FOC_F_ZV 30000
@@ -175,19 +175,19 @@
 #define MCCONF_FOC_PLL_KI 30000
 
 // Motor Inductance (L)
-#define MCCONF_FOC_MOTOR_L 0.00010601
+#define MCCONF_FOC_MOTOR_L 0.00025605
 
 // Motor Inductance Difference (Ld - Lq)
-#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 0
+#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 0.00011882
 
 // Motor Resistance (R)
-#define MCCONF_FOC_MOTOR_R 0.0477
+#define MCCONF_FOC_MOTOR_R 0.0576
 
 // Motor Flux Linkage (λ)
-#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.013687
+#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.013535
 
 // Observer Gain (x1M)
-#define MCCONF_FOC_OBSERVER_GAIN 5.34e+06
+#define MCCONF_FOC_OBSERVER_GAIN 5.46e+06
 
 // Observer Gain At Minimum Duty
 #define MCCONF_FOC_OBSERVER_GAIN_SLOW 0.05
