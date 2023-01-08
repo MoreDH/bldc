@@ -29,13 +29,12 @@
 #include "comm_can.h"
 #include "hw.h"
 #include <math.h>
+#include "digital_filter.h"
 
 // Settings
 #define PEDAL_INPUT_TIMEOUT				0.2
 #define MAX_MS_WITHOUT_CADENCE			3000
 #define MIN_MS_WITHOUT_POWER			500
-#define FILTER_SAMPLES					5
-#define RPM_FILTER_SAMPLES				8
 
 // Threads
 static THD_FUNCTION(pas_thread, arg);
@@ -53,7 +52,13 @@ static volatile float pedal_rpm = 0;
 static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
-static volatile float torque_ratio = 0.0;
+float pedal_torque_prev1 = 0.0;
+float pedal_torque_prev2 = 0.0;
+float pedal_torque_filter_prev1 = 0.0;
+float pedal_torque_filter_prev2 = 0.0;
+
+systime_t thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
+
 
 /**
  * Configure and initialize PAS application
@@ -146,14 +151,14 @@ void pas_event_handler(void) {
 		case -1:correct_direction_counter = 0; break;
 	}
 
-	const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+	const float timestamp = (float)chVTGetSystemTime() / (float)CH_CFG_ST_FREQUENCY;
 
 	// sensors are poorly placed, so use only one rising edge as reference
 	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
 		float period = (timestamp - old_timestamp) * (float)config.magnets;
 		old_timestamp = timestamp;
 
-		UTILS_LP_FAST(period_filtered, period, 1.0);
+		UTILS_LP_FAST(period_filtered, period, 1.0); // 1.0 is unfiltered
 
 		if(period_filtered < min_pedal_period) { //can't be that short, abort
 			return;
@@ -188,10 +193,11 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	for(;;) {
 		// Sleep for a time according to the specified rate
-		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+		systime_t thread_ticks = thread_t1 - thread_t0;
+		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz - thread_ticks;
 
 		// At least one tick should be slept to not block the other threads
-		if (sleep_time == 0) {
+		if (sleep_time <= 0) {
 			sleep_time = 1;
 		}
 		chThdSleep(sleep_time);
@@ -200,6 +206,8 @@ static THD_FUNCTION(pas_thread, arg) {
 			is_running = false;
 			return;
 		}
+
+		thread_t0 = chVTGetSystemTime();
 
 		pas_event_handler();	// this could happen inside an ISR instead of being polled
 
@@ -236,8 +244,15 @@ static THD_FUNCTION(pas_thread, arg) {
 #ifdef HW_HAS_PAS_TORQUE_SENSOR
 			case PAS_CTRL_TYPE_TORQUE:
 			{
-				torque_ratio = hw_get_PAS_torque();
-				output = torque_ratio * config.current_scaling * sub_scaling;
+				const float PAS_UPDATE_RATE_HZ = 100.0f;
+				const float LOW_PASS_FILTER_HZ = PAS_UPDATE_RATE_HZ / 4;
+				float pedal_torque = hw_get_PAS_torque();
+				float pedal_torque_filter = filter_bw2(config.update_rate_hz, LOW_PASS_FILTER_HZ, pedal_torque, &pedal_torque_prev1, &pedal_torque_prev2, &pedal_torque_filter_prev1, &pedal_torque_filter_prev2);
+				pedal_torque_prev2 = pedal_torque_prev1;
+				pedal_torque_prev1 = pedal_torque;
+				pedal_torque_filter_prev2 = pedal_torque_filter_prev1;
+				pedal_torque_filter_prev1 = pedal_torque_filter;
+				output = pedal_torque_filter * config.current_scaling * sub_scaling;
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */
@@ -270,7 +285,7 @@ static THD_FUNCTION(pas_thread, arg) {
 			utils_step_towards(&output_ramp, output, ramp_step);
 			utils_truncate_number(&output_ramp, 0.0, config.current_scaling * sub_scaling);
 
-			last_time = chVTGetSystemTimeX();
+			last_time = chVTGetSystemTime();
 			output = output_ramp;
 		}
 
@@ -298,5 +313,6 @@ static THD_FUNCTION(pas_thread, arg) {
 		else {
 			output_current_rel = output;
 		}
+		thread_t1 = chVTGetSystemTime();
 	}
 }
