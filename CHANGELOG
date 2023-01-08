@@ -4,6 +4,7 @@
 * More consistent PAS loop times.
 * PAS torque filtered new butterworth 2nd order low pass filter.
 * PAS1-9 is now progressive(0.15/1.267) with slow walk mode.
+* PAS pedal torque to motor output is progressive.
 
 === FW 6.00 ===
 * Added stack checks.

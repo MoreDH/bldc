@@ -252,7 +252,7 @@ static THD_FUNCTION(pas_thread, arg) {
 				pedal_torque_prev1 = pedal_torque;
 				pedal_torque_filter_prev2 = pedal_torque_filter_prev1;
 				pedal_torque_filter_prev1 = pedal_torque_filter;
-				output = pedal_torque_filter * config.current_scaling * sub_scaling;
+				output = utils_throttle_curve(pedal_torque_filter, -1.0, 0.0, 2) * config.current_scaling * sub_scaling;
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */
