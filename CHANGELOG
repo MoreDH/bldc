@@ -4,7 +4,7 @@
 * More consistent PAS loop times.
 * PAS torque filtered new butterworth 2nd order low pass filter.
 * PAS1-9 is now progressive(0.15/1.267) with slow walk mode.
-* PAS pedal torque to motor output is progressive.
+* PAS pedal torque to motor output is progressive (-3.0/poly).
 * Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.5/0.3s, no field weakening.
 
 === FW 6.00 ===
