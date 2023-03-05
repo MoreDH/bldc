@@ -243,17 +243,17 @@ static void set_assist_level(uint8_t assist_code) {
 	luna_settings.assist_code = assist_code;
 
 	switch (assist_code) {
-		case PAS_LEVEL_0:		current_scale = 0.00; break;
-		case PAS_LEVEL_1:		current_scale = 0.15; break;
-		case PAS_LEVEL_2:		current_scale = 0.19; break;
-		case PAS_LEVEL_3:		current_scale = 0.24; break;
-		case PAS_LEVEL_4:		current_scale = 0.31; break;
-		case PAS_LEVEL_5:		current_scale = 0.39; break;
-		case PAS_LEVEL_6:		current_scale = 0.49; break;
-		case PAS_LEVEL_7:		current_scale = 0.62; break;
-		case PAS_LEVEL_8:		current_scale = 0.79; break;
-		case PAS_LEVEL_9:		current_scale = 1.00; break;
-		case PAS_LEVEL_WALK:	current_scale = 0.05; break;
+		case PAS_LEVEL_WALK:	current_scale = 0.000; break;
+		case PAS_LEVEL_0:		current_scale = 0.025; break;
+		case PAS_LEVEL_1:		current_scale = 0.050; break;
+		case PAS_LEVEL_2:		current_scale = 0.100; break;
+		case PAS_LEVEL_3:		current_scale = 0.200; break;
+		case PAS_LEVEL_4:		current_scale = 0.250; break;
+		case PAS_LEVEL_5:		current_scale = 0.300; break;
+		case PAS_LEVEL_6:		current_scale = 0.350; break;
+		case PAS_LEVEL_7:		current_scale = 0.500; break;
+		case PAS_LEVEL_8:		current_scale = 0.700; break;
+		case PAS_LEVEL_9:		current_scale = 1.000; break;
 		default: return;
 	}
 

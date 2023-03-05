@@ -1,9 +1,9 @@
-=== FW 6.00 (2022.01.08 MoreDH) ===
+=== FW 6.00 (2022.03.04 MoreDH) ===
 * Battery SOC% is now mapped from 4.19 to 3.0V.
 * PAS pedal timeout 5 -> 3s.
 * More consistent PAS loop times.
 * PAS torque filtered new butterworth 2nd order low pass filter.
-* PAS1-9 is now progressive(0.15/1.267) with slow walk mode.
+* PAS0-9 is now 3 zone: LOW-PAS012 (0.025, 0.05, 0.1) / NORMAL-PAS3456(0.2, 0.25, 0.3, 0.35) / POWER-PAS789(0.5, 0.7, 1).
 * PAS pedal torque to motor output is progressive (-3.0/poly).
 * Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.5/0.3s, no field weakening.
 
