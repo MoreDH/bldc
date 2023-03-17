@@ -3,7 +3,9 @@
 * PAS pedal timeout 5 -> 2.5s.
 * More consistent PAS loop times.
 * PAS torque filtered new butterworth 2nd order low pass filter.
-
+* PAS0-9 is 2 zone.
+	* LINEAR-PAS0-5 (0.05, 0.1, 0.15, 0.2, 0.25, 0.3)
+	* EXPO-PAS6-9(0.405, 0.548, 0.74, 1)
 ---
 
 ### 6.02
