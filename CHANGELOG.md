@@ -2,6 +2,7 @@
 * Battery SOC% is now mapped from 4.19 to 3.0V.
 * PAS pedal timeout 5 -> 2.5s.
 * More consistent PAS loop times.
+* PAS torque filtered new butterworth 2nd order low pass filter.
 
 ---
 

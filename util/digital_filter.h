@@ -45,5 +45,6 @@ void filter_add_sample(float *buffer, float sample, int bits, uint32_t *offset);
 float biquad_process(Biquad *biquad, float in);
 void biquad_config(Biquad *biquad, BiquadType type, float Fc);
 void biquad_reset(Biquad *biquad);
+float filter_bw2(float sampleRateHz, float cutoffFreqHz, float sample, float *samplePrev1, float *samplePrev2, float *filterPrev1, float *filterPrev2); // 2nd order butterworth low pass filter
 
 #endif /* DIGITAL_FILTER_H_ */
