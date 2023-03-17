@@ -55,6 +55,8 @@ static volatile bool stop_now = true;
 static volatile bool is_running = false;
 static volatile float torque_ratio = 0.0;
 
+systime_t thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
+
 /**
  * Configure and initialize PAS application
  *
@@ -146,7 +148,7 @@ void pas_event_handler(void) {
 		case -1:correct_direction_counter = 0; break;
 	}
 
-	const float timestamp = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+	const float timestamp = (float)chVTGetSystemTime() / (float)CH_CFG_ST_FREQUENCY;
 
 	// sensors are poorly placed, so use only one rising edge as reference
 	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
@@ -188,7 +190,8 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	for(;;) {
 		// Sleep for a time according to the specified rate
-		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+		systime_t thread_ticks = thread_t1 - thread_t0;
+		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz - thread_ticks;
 
 		// At least one tick should be slept to not block the other threads
 		if (sleep_time == 0) {
@@ -200,6 +203,8 @@ static THD_FUNCTION(pas_thread, arg) {
 			is_running = false;
 			return;
 		}
+
+		thread_t0 = chVTGetSystemTime();
 
 		pas_event_handler();	// this could happen inside an ISR instead of being polled
 
@@ -270,7 +275,7 @@ static THD_FUNCTION(pas_thread, arg) {
 			utils_step_towards(&output_ramp, output, ramp_step);
 			utils_truncate_number(&output_ramp, 0.0, config.current_scaling * sub_scaling);
 
-			last_time = chVTGetSystemTimeX();
+			last_time = chVTGetSystemTime();
 			output = output_ramp;
 		}
 
@@ -298,5 +303,6 @@ static THD_FUNCTION(pas_thread, arg) {
 		else {
 			output_current_rel = output;
 		}
+		thread_t1 = chVTGetSystemTime();
 	}
 }
