@@ -364,7 +364,7 @@
 #define MCCONF_FOC_MTPA_MODE 0
 
 // Field Weakening Current Max
-#define MCCONF_FOC_FW_CURRENT_MAX 7
+#define MCCONF_FOC_FW_CURRENT_MAX 0
 
 // Field Weakening Duty Start
 #define MCCONF_FOC_FW_DUTY_START 0.9
