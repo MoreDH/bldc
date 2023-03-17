@@ -32,7 +32,7 @@
 
 // Settings
 #define PEDAL_INPUT_TIMEOUT				0.2
-#define MAX_MS_WITHOUT_CADENCE			5000
+#define MAX_MS_WITHOUT_CADENCE			2500
 #define MIN_MS_WITHOUT_POWER			500
 #define FILTER_SAMPLES					5
 #define RPM_FILTER_SAMPLES				8
