@@ -30,6 +30,9 @@
 #include "hw.h"
 #include <math.h>
 #include "digital_filter.h"
+#include <stdio.h>
+#include "commands.h"
+#include "terminal.h"
 
 // Settings
 #define PEDAL_INPUT_TIMEOUT				0.2
@@ -42,23 +45,35 @@ static THD_WORKING_AREA(pas_thread_wa, 512);
 
 // Private variables
 static volatile pas_config config;
-static volatile float sub_scaling = 1.0;
-static volatile float output_current_rel = 0.0;
-static volatile float ms_without_power = 0.0;
-static volatile float max_pulse_period = 0.0;
-static volatile float min_pedal_period = 0.0;
-static volatile float direction_conf = 0.0;
+static volatile float sub_scaling = 1;
+static volatile float output_current_rel = 0;
+static volatile float ms_without_power = 0;
+static volatile float max_pulse_period = 0;
+static volatile float min_pedal_period = 0;
+static volatile float direction_conf = 0;
 static volatile float pedal_rpm = 0;
 static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
-float pedal_torque_prev1 = 0.0;
-float pedal_torque_prev2 = 0.0;
-float pedal_torque_filter_prev1 = 0.0;
-float pedal_torque_filter_prev2 = 0.0;
+float pedal_torque;
+float pedal_torque_prev1 = 0;
+float pedal_torque_prev2 = 0;
+float pedal_torque_filter;
+float pedal_torque_filter_prev1 = 0;
+float pedal_torque_filter_prev2 = 0;
+float output = 0;
+systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
 
-systime_t thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
+// Debug values
+static int debug_sample_field, debug_sample_count, debug_sample_index;
+static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_experiment_4, debug_experiment_5, debug_experiment_6;
 
+// Function Prototypes
+static void terminal_sample(int argc, const char **argv);
+static void terminal_experiment(int argc, const char **argv);
+static float debug_get_field(int index);
+static void debug_sample(void);
+static void debug_experiment(void);
 
 /**
  * Configure and initialize PAS application
@@ -89,6 +104,19 @@ void app_pas_configure(pas_config *conf) {
  */
 void app_pas_start(bool is_primary_output) {
 	stop_now = false;
+
+	// Register terminal commands
+	terminal_register_command_callback(
+		"pas_sample",
+		"Output real time values to the terminal",
+		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-pedRpm, 4-output, 5-threadTicks] [Sample Count]",
+		terminal_sample);
+	terminal_register_command_callback(
+		"pas_plot",
+		"Output real time values to the experiments graph",
+		"[Field Number] [Plot 1-6]",
+		terminal_experiment);
+
 	chThdCreateStatic(pas_thread_wa, sizeof(pas_thread_wa), NORMALPRIO, pas_thread, NULL);
 
 	primary_output = is_primary_output;
@@ -101,7 +129,7 @@ bool app_pas_is_running(void) {
 void app_pas_stop(void) {
 	stop_now = true;
 	while (is_running) {
-		chThdSleepMilliseconds(1);
+		chThdSleepMilliseconds(2);
 	}
 
 	if (primary_output == true) {
@@ -151,11 +179,11 @@ void pas_event_handler(void) {
 		case -1:correct_direction_counter = 0; break;
 	}
 
-	const float timestamp = (float)chVTGetSystemTime() / (float)CH_CFG_ST_FREQUENCY;
+	const float timestamp = (float) chVTGetSystemTime() / CH_CFG_ST_FREQUENCY;
 
 	// sensors are poorly placed, so use only one rising edge as reference
 	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
-		float period = (timestamp - old_timestamp) * (float)config.magnets;
+		float period = (timestamp - old_timestamp) * config.magnets;
 		old_timestamp = timestamp;
 
 		UTILS_LP_FAST(period_filtered, period, 1.0); // 1.0 is unfiltered
@@ -164,11 +192,11 @@ void pas_event_handler(void) {
 			return;
 		}
 		pedal_rpm = 60.0 / period_filtered;
-		pedal_rpm *= (direction_conf * (float)direction_qem);
+		pedal_rpm *= (direction_conf * (float) direction_qem);
 		inactivity_time = 0.0;
 	}
 	else {
-		inactivity_time += 1.0 / (float)config.update_rate_hz;
+		inactivity_time += 1.0 / config.update_rate_hz;
 
 		//if no pedal activity, set RPM as zero
 		if(inactivity_time > max_pulse_period) {
@@ -181,7 +209,6 @@ void pas_event_handler(void) {
 static THD_FUNCTION(pas_thread, arg) {
 	(void)arg;
 
-	float output = 0;
 	chRegSetThreadName("APP_PAS");
 
 #ifdef HW_PAS1_PORT
@@ -193,14 +220,17 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	for(;;) {
 		// Sleep for a time according to the specified rate
-		systime_t thread_ticks = thread_t1 - thread_t0;
-		systime_t sleep_time = CH_CFG_ST_FREQUENCY / config.update_rate_hz - thread_ticks;
+		thread_ticks = thread_t1 - thread_t0;
+		const systime_t nominal_sleep_ticks = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+		systime_t sleep_ticks = nominal_sleep_ticks - thread_ticks;
 
-		// At least one tick should be slept to not block the other threads
-		if (sleep_time <= 0) {
-			sleep_time = 1;
+		if (sleep_ticks > nominal_sleep_ticks) {
+			sleep_ticks = nominal_sleep_ticks; // maximum
 		}
-		chThdSleep(sleep_time);
+		if (sleep_ticks <= 0) {
+			sleep_ticks = 1; // minimum, 1 tick sleep to not block the other threads
+		}
+		chThdSleep(sleep_ticks);
 
 		if (stop_now) {
 			is_running = false;
@@ -209,7 +239,7 @@ static THD_FUNCTION(pas_thread, arg) {
 
 		thread_t0 = chVTGetSystemTime();
 
-		pas_event_handler();	// this could happen inside an ISR instead of being polled
+		pas_event_handler(); // this could happen inside an ISR instead of being polled
 
 		// For safe start when fault codes occur
 		if (mc_interface_get_fault() != FAULT_CODE_NONE) {
@@ -246,8 +276,8 @@ static THD_FUNCTION(pas_thread, arg) {
 			{
 				const float PAS_UPDATE_RATE_HZ = 100.0f;
 				const float LOW_PASS_FILTER_HZ = PAS_UPDATE_RATE_HZ / 4;
-				float pedal_torque = hw_get_PAS_torque();
-				float pedal_torque_filter = filter_bw2(config.update_rate_hz, LOW_PASS_FILTER_HZ, pedal_torque, &pedal_torque_prev1, &pedal_torque_prev2, &pedal_torque_filter_prev1, &pedal_torque_filter_prev2);
+				pedal_torque = hw_get_PAS_torque();
+				pedal_torque_filter = filter_bw2(config.update_rate_hz, LOW_PASS_FILTER_HZ, pedal_torque, &pedal_torque_prev1, &pedal_torque_prev2, &pedal_torque_filter_prev1, &pedal_torque_filter_prev2);
 				pedal_torque_prev2 = pedal_torque_prev1;
 				pedal_torque_prev1 = pedal_torque;
 				pedal_torque_filter_prev2 = pedal_torque_filter_prev1;
@@ -290,7 +320,7 @@ static THD_FUNCTION(pas_thread, arg) {
 		}
 
 		if (output < 0.001) {
-			ms_without_power += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+			ms_without_power += 1000.0 / config.update_rate_hz;
 		}
 
 		// Safe start is enabled if the output has not been zero for long enough
@@ -313,6 +343,115 @@ static THD_FUNCTION(pas_thread, arg) {
 		else {
 			output_current_rel = output;
 		}
+
+		// Debug outputs
+		debug_sample();
+		debug_experiment();
+
 		thread_t1 = chVTGetSystemTime();
+	}
+}
+
+// Terminal commands
+static void terminal_sample(int argc, const char **argv) {
+	if (argc == 3) {
+		debug_sample_field = 0;
+		debug_sample_count = 0;
+		sscanf(argv[1], "%d", &debug_sample_field);
+		sscanf(argv[2], "%d", &debug_sample_count);
+		debug_sample_index = 0;
+	} else {
+		commands_printf("This command requires two arguments.\n");
+	}
+}
+
+static void terminal_experiment(int argc, const char **argv) {
+	if (argc == 3) {
+		int field = 0;
+		int graph = 1;
+		sscanf(argv[1], "%d", &field);
+		sscanf(argv[2], "%d", &graph);
+		switch(graph){
+			case (1):
+				debug_experiment_1 = field;
+				break;
+			case (2):
+				debug_experiment_2 = field;
+				break;
+			case (3):
+				debug_experiment_3 = field;
+				break;
+			case (4):
+				debug_experiment_4 = field;
+				break;
+			case (5):
+				debug_experiment_5 = field;
+				break;
+			case (6):
+				debug_experiment_6 = field;
+				break;
+		}
+		commands_init_plot("Milliseconds", "PAS Debug");
+		commands_plot_add_graph("1");
+		commands_plot_add_graph("2");
+		commands_plot_add_graph("3");
+		commands_plot_add_graph("4");
+		commands_plot_add_graph("5");
+		commands_plot_add_graph("6");
+	} else {
+		commands_printf("This command requires two arguments.\n");
+	}
+}
+
+// Debug functions
+static float debug_get_field(int index) {
+	switch(index){
+		case(1):
+			return pedal_torque;
+		case(2):
+			return pedal_torque_filter;
+		case(3):
+			return pedal_rpm;
+		case(4):
+			return output;
+		case(5):
+			return thread_ticks;
+
+		default:
+			return 0;
+	}
+}
+
+static void debug_sample() {
+	if(debug_sample_index < debug_sample_count){
+		commands_printf("%f", (double) debug_get_field(debug_sample_field));
+		++debug_sample_index;
+	}
+}
+
+static void debug_experiment() {
+	if(debug_experiment_1 != 0) {
+		commands_plot_set_graph(0);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_1));
+	}
+	if(debug_experiment_2 != 0) {
+		commands_plot_set_graph(1);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_2));
+	}
+	if(debug_experiment_3 != 0) {
+		commands_plot_set_graph(2);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_3));
+	}
+	if(debug_experiment_4 != 0) {
+		commands_plot_set_graph(3);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_4));
+	}
+	if(debug_experiment_5 != 0) {
+		commands_plot_set_graph(4);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_5));
+	}
+	if(debug_experiment_6 != 0) {
+		commands_plot_set_graph(5);
+		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_6));
 	}
 }
