@@ -294,7 +294,7 @@ static THD_FUNCTION(pas_thread, arg) {
 				if(output == 0.0 || pedal_rpm > 0) {
 					ms_without_cadence_or_torque = 0.0;
 				} else {
-					ms_without_cadence_or_torque += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
+					ms_without_cadence_or_torque += 1000.0 / config.update_rate_hz;
 					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE) {
 						output = 0.0;
 					}
