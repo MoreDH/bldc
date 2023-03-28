@@ -33,22 +33,15 @@
 #include <stdio.h>
 #include "commands.h"
 #include "terminal.h"
-#include "buffer.h"
 
 // Settings
 #define PEDAL_INPUT_TIMEOUT				0.2
 #define MAX_MS_WITHOUT_CADENCE			2500
 #define MIN_MS_WITHOUT_POWER			500
 
-// Function pointers
-static void(* volatile send_func_sample)(unsigned char *data, unsigned int len) = 0;
-
 // Threads
 static THD_FUNCTION(pas_thread, arg);
 static THD_WORKING_AREA(pas_thread_wa, 512);
-static THD_WORKING_AREA(sample_send_thread_wa, 512);
-static THD_FUNCTION(sample_send_thread, arg);
-static thread_t *sample_send_tp;
 
 // Private variables
 static volatile pas_config config;
@@ -81,24 +74,6 @@ static void terminal_experiment(int argc, const char **argv);
 static float debug_get_field(int index);
 static void debug_sample(void);
 static void debug_experiment(void);
-
-// Sampling variables
-#define ADC_SAMPLE_MAX_LEN		2000
-__attribute__((section(".ram4"))) static volatile int16_t m_debug1_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug2_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug3_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug4_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug5_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug6_samples[ADC_SAMPLE_MAX_LEN];
-__attribute__((section(".ram4"))) static volatile int16_t m_debug7_samples[ADC_SAMPLE_MAX_LEN];
-
-static volatile int m_sample_len;
-static volatile int m_sample_int;
-static volatile bool m_sample_raw;
-static volatile debug_sampling_mode m_sample_mode;
-static volatile debug_sampling_mode m_sample_mode_last;
-static volatile int m_sample_now;
-static volatile int m_sample_trigger;
 
 /**
  * Configure and initialize PAS application
@@ -142,16 +117,7 @@ void app_pas_start(bool is_primary_output) {
 		"[Field Number] [Plot 1-6]",
 		terminal_experiment);
 
-	m_sample_len = 1000;
-	m_sample_int = 1;
-	m_sample_now = 0;
-	m_sample_raw = false;
-	m_sample_trigger = 0;
-	m_sample_mode = DEBUG_SAMPLING_OFF;
-	m_sample_mode_last = DEBUG_SAMPLING_OFF;
-
 	chThdCreateStatic(pas_thread_wa, sizeof(pas_thread_wa), NORMALPRIO, pas_thread, NULL);
-	chThdCreateStatic(sample_send_thread_wa, sizeof(sample_send_thread_wa), NORMALPRIO - 1, sample_send_thread, NULL);
 
 	primary_output = is_primary_output;
 }
@@ -328,7 +294,7 @@ static THD_FUNCTION(pas_thread, arg) {
 				if(output == 0.0 || pedal_rpm > 0) {
 					ms_without_cadence_or_torque = 0.0;
 				} else {
-					ms_without_cadence_or_torque += 1000.0 / config.update_rate_hz;
+					ms_without_cadence_or_torque += (1000.0 * (float)sleep_time) / (float)CH_CFG_ST_FREQUENCY;
 					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE) {
 						output = 0.0;
 					}
@@ -381,76 +347,6 @@ static THD_FUNCTION(pas_thread, arg) {
 		// Debug outputs
 		debug_sample();
 		debug_experiment();
-
-		bool sample = false;
-
-		switch (m_sample_mode) {
-		case DEBUG_SAMPLING_NOW:
-			if (m_sample_now == m_sample_len) {
-				m_sample_mode = DEBUG_SAMPLING_OFF;
-				m_sample_mode_last = DEBUG_SAMPLING_NOW;
-				chSysLockFromISR();
-				chEvtSignalI(sample_send_tp, (eventmask_t) 1);
-				chSysUnlockFromISR();
-			} else {
-				sample = true;
-			}
-			break;
-
-		case DEBUG_SAMPLING_TRIGGER_START:
-		case DEBUG_SAMPLING_TRIGGER_START_NOSEND: {
-			sample = true;
-
-			int sample_last = -1;
-			if (m_sample_trigger >= 0) {
-				sample_last = m_sample_trigger - m_sample_len;
-				if (sample_last < 0) {
-					sample_last += ADC_SAMPLE_MAX_LEN;
-				}
-			}
-
-			if (m_sample_now == sample_last) {
-				m_sample_mode_last = m_sample_mode;
-				sample = false;
-
-				if (m_sample_mode == DEBUG_SAMPLING_TRIGGER_START) {
-					chSysLockFromISR();
-					chEvtSignalI(sample_send_tp, (eventmask_t) 1);
-					chSysUnlockFromISR();
-				}
-
-				m_sample_mode = DEBUG_SAMPLING_OFF;
-			}
-
-			if (config.current_scaling >= 0.3 && m_sample_trigger < 0) { // trigger on PAS5
-				m_sample_trigger = m_sample_now;
-			}
-		} break;
-
-		default:
-			break;
-		}
-
-		if (sample) {
-			static int a = 0;
-			if (++a >= m_sample_int) {
-				a = 0;
-
-				if (m_sample_now >= ADC_SAMPLE_MAX_LEN) {
-					m_sample_now = 0;
-				}
-
-				m_debug1_samples[m_sample_now] = (int16_t) (10000 * pedal_torque);
-				m_debug2_samples[m_sample_now] = (int16_t) (10000 * pedal_torque_filter);
-				m_debug3_samples[m_sample_now] = (int16_t) (10000 * output);
-				m_debug4_samples[m_sample_now] = (int16_t) (10000 * pedal_rpm);
-				m_debug5_samples[m_sample_now] = (int16_t) (10000 * sin(2 * 3.14 * m_sample_now / 500));
-				m_debug6_samples[m_sample_now] = 0;
-				m_debug7_samples[m_sample_now] = 0;
-
-				++m_sample_now;
-			}
-		}
 
 		thread_t1 = chVTGetSystemTime();
 	}
@@ -557,90 +453,5 @@ static void debug_experiment() {
 	if(debug_experiment_6 != 0) {
 		commands_plot_set_graph(5);
 		commands_send_plot_points(ST2MS(thread_t0), debug_get_field(debug_experiment_6));
-	}
-}
-
-float mc_interface_get_last_sample_adc_isr_duration(void) {
-	return 0;
-}
-
-void mc_interface_sample_print_data(debug_sampling_mode mode, uint16_t len, uint8_t decimation, bool raw, 
-		void(*reply_func)(unsigned char *data, unsigned int len)) {
-
-	if (len > ADC_SAMPLE_MAX_LEN) {
-		len = ADC_SAMPLE_MAX_LEN;
-	}
-
-	if (mode == DEBUG_SAMPLING_SEND_LAST_SAMPLES) {
-		chEvtSignal(sample_send_tp, (eventmask_t) 1);
-	} else {
-		m_sample_trigger = -1;
-		m_sample_now = 0;
-		m_sample_len = len;
-		m_sample_int = decimation;
-		m_sample_mode = mode;
-		m_sample_raw = raw;
-		send_func_sample = reply_func;
-	}
-}
-
-static THD_FUNCTION(sample_send_thread, arg) {
-	(void)arg;
-
-	chRegSetThreadName("SampleSender");
-	sample_send_tp = chThdGetSelfX();
-
-	for(;;) {
-		chEvtWaitAny((eventmask_t) 1);
-
-		int len = 0;
-		int offset = 0;
-
-		switch (m_sample_mode_last) {
-		case DEBUG_SAMPLING_NOW:
-		case DEBUG_SAMPLING_START:
-			len = m_sample_len;
-			break;
-
-		case DEBUG_SAMPLING_TRIGGER_START:
-		case DEBUG_SAMPLING_TRIGGER_FAULT:
-		case DEBUG_SAMPLING_TRIGGER_START_NOSEND:
-		case DEBUG_SAMPLING_TRIGGER_FAULT_NOSEND:
-			len = ADC_SAMPLE_MAX_LEN;
-			offset = m_sample_trigger - m_sample_len;
-			break;
-
-		default:
-			break;
-		}
-
-		for (int i = 0;i < len;i++) {
-			uint8_t buffer[40];
-			int32_t index = 0;
-			int ind_samp = i + offset;
-
-			while (ind_samp >= ADC_SAMPLE_MAX_LEN) {
-				ind_samp -= ADC_SAMPLE_MAX_LEN;
-			}
-
-			while (ind_samp < 0) {
-				ind_samp += ADC_SAMPLE_MAX_LEN;
-			}
-
-			buffer[index++] = COMM_SAMPLE_PRINT;
-
-			buffer_append_float32_auto(buffer, (float) m_debug6_samples[ind_samp] / 10000, &index);	// curr0
-			buffer_append_float32_auto(buffer, (float) m_debug7_samples[ind_samp] / 10000, &index);	// curr1
-			buffer_append_float32_auto(buffer, (float) m_debug1_samples[ind_samp] / 10000, &index);	// ph1
-			buffer_append_float32_auto(buffer, (float) m_debug2_samples[ind_samp] / 10000, &index);	// ph2
-			buffer_append_float32_auto(buffer, (float) m_debug3_samples[ind_samp] / 10000, &index);	// ph3
-			buffer_append_float32_auto(buffer, (float) m_debug4_samples[ind_samp] / 10000, &index);	// vzero
-			buffer_append_float32_auto(buffer, (float) m_debug5_samples[ind_samp] / 10000, &index);	// curr_fir
-			buffer_append_float32_auto(buffer, (float) 500, &index);								// f_sw
-			buffer[index++] = 0;																	// status
-			buffer[index++] = 0;																	// phase
-
-			send_func_sample(buffer, index);
-		}
 	}
 }

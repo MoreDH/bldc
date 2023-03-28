@@ -98,6 +98,28 @@ static volatile motor_if_state_t m_motor_1;
 static volatile motor_if_state_t m_motor_2;
 #endif
 
+// Sampling variables
+#define ADC_SAMPLE_MAX_LEN		2000
+__attribute__((section(".ram4"))) static volatile int16_t m_curr0_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_curr1_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_ph1_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_ph2_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_ph3_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_vzero_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile uint8_t m_status_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_curr_fir_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int16_t m_f_sw_samples[ADC_SAMPLE_MAX_LEN];
+__attribute__((section(".ram4"))) static volatile int8_t m_phase_samples[ADC_SAMPLE_MAX_LEN];
+
+static volatile int m_sample_len;
+static volatile int m_sample_int;
+static volatile bool m_sample_raw;
+static volatile debug_sampling_mode m_sample_mode;
+static volatile debug_sampling_mode m_sample_mode_last;
+static volatile int m_sample_now;
+static volatile int m_sample_trigger;
+static volatile float m_last_adc_duration_sample;
+static volatile bool m_sample_is_second_motor;
 static volatile gnss_data m_gnss = {0};
 
 typedef struct {
@@ -118,10 +140,14 @@ static volatile motor_if_state_t *motor_now(void);
 
 // Function pointers
 static void(*pwn_done_func)(void) = 0;
+static void(* volatile send_func_sample)(unsigned char *data, unsigned int len) = 0;
 
 // Threads
 static THD_WORKING_AREA(timer_thread_wa, 512);
 static THD_FUNCTION(timer_thread, arg);
+static THD_WORKING_AREA(sample_send_thread_wa, 512);
+static THD_FUNCTION(sample_send_thread, arg);
+static thread_t *sample_send_tp;
 static THD_WORKING_AREA(fault_stop_thread_wa, 512);
 static THD_FUNCTION(fault_stop_thread, arg);
 static thread_t *fault_stop_tp;
@@ -144,10 +170,21 @@ void mc_interface_init(void) {
 	m_motor_2.m_conf.motor_type = MOTOR_TYPE_FOC;
 #endif
 
+	m_last_adc_duration_sample = 0.0;
+	m_sample_len = 1000;
+	m_sample_int = 1;
+	m_sample_now = 0;
+	m_sample_raw = false;
+	m_sample_trigger = 0;
+	m_sample_mode = DEBUG_SAMPLING_OFF;
+	m_sample_mode_last = DEBUG_SAMPLING_OFF;
+	m_sample_is_second_motor = false;
+
 	mc_interface_stat_reset();
 
 	// Start threads
 	chThdCreateStatic(timer_thread_wa, sizeof(timer_thread_wa), NORMALPRIO, timer_thread, NULL);
+	chThdCreateStatic(sample_send_thread_wa, sizeof(sample_send_thread_wa), NORMALPRIO - 1, sample_send_thread, NULL);
 	chThdCreateStatic(fault_stop_thread_wa, sizeof(fault_stop_thread_wa), HIGHPRIO - 3, fault_stop_thread, NULL);
 	chThdCreateStatic(stat_thread_wa, sizeof(stat_thread_wa), NORMALPRIO, stat_thread, NULL);
 
@@ -1442,6 +1479,33 @@ void mc_interface_update_pid_pos_offset(float angle_now, bool store) {
 	mempools_free_mcconf(mcconf);
 }
 
+float mc_interface_get_last_sample_adc_isr_duration(void) {
+	return m_last_adc_duration_sample;
+}
+
+void mc_interface_sample_print_data(debug_sampling_mode mode, uint16_t len, uint8_t decimation, bool raw, 
+		void(*reply_func)(unsigned char *data, unsigned int len)) {
+
+	if (len > ADC_SAMPLE_MAX_LEN) {
+		len = ADC_SAMPLE_MAX_LEN;
+	}
+
+	if (mode == DEBUG_SAMPLING_SEND_LAST_SAMPLES) {
+		chEvtSignal(sample_send_tp, (eventmask_t) 1);
+	} else {
+		m_sample_trigger = -1;
+		m_sample_now = 0;
+		m_sample_len = len;
+		m_sample_int = decimation;
+		m_sample_mode = mode;
+		m_sample_raw = raw;
+		send_func_sample = reply_func;
+#ifdef HW_HAS_DUAL_MOTORS
+		m_sample_is_second_motor = motor_now() == &m_motor_2;
+#endif
+	}
+}
+
 /**
  * Get filtered MOSFET temperature. The temperature is pre-calculated, so this
  * functions is fast.
@@ -1818,18 +1882,21 @@ void mc_interface_mc_timer_isr(bool is_second_motor) {
 	// Fetch these values in a config-specific way to avoid some overhead of the general
 	// functions. That will make this interrupt run a bit faster.
 	mc_state state;
+	float current;
 	float current_filtered;
 	float current_in_filtered;
 	float abs_current;
 	float abs_current_filtered;
 	if (conf_now->motor_type == MOTOR_TYPE_FOC) {
 		state = mcpwm_foc_get_state_motor(is_second_motor);
+		current = mcpwm_foc_get_tot_current_motor(is_second_motor);
 		current_filtered = mcpwm_foc_get_tot_current_filtered_motor(is_second_motor);
 		current_in_filtered = mcpwm_foc_get_tot_current_in_filtered_motor(is_second_motor);
 		abs_current = mcpwm_foc_get_abs_motor_current_motor(is_second_motor);
 		abs_current_filtered = mcpwm_foc_get_abs_motor_current_filtered_motor(is_second_motor);
 	} else {
 		state = mcpwm_get_state();
+		current = mcpwm_get_tot_current();
 		current_filtered = mcpwm_get_tot_current_filtered();
 		current_in_filtered = mcpwm_get_tot_current_in_filtered();
 		abs_current = mcpwm_get_tot_current();
@@ -1930,6 +1997,165 @@ void mc_interface_mc_timer_isr(bool is_second_motor) {
 
 			curr_diff_samples = 0.0;
 			curr_diff_sum = 0.0;
+		}
+	}
+
+	bool sample = false;
+	debug_sampling_mode sample_mode =
+			m_sample_is_second_motor == is_second_motor ?
+					m_sample_mode : DEBUG_SAMPLING_OFF;
+
+	switch (sample_mode) {
+	case DEBUG_SAMPLING_NOW:
+		if (m_sample_now == m_sample_len) {
+			m_sample_mode = DEBUG_SAMPLING_OFF;
+			m_sample_mode_last = DEBUG_SAMPLING_NOW;
+			chSysLockFromISR();
+			chEvtSignalI(sample_send_tp, (eventmask_t) 1);
+			chSysUnlockFromISR();
+		} else {
+			sample = true;
+		}
+		break;
+
+	case DEBUG_SAMPLING_START:
+		if (state == MC_STATE_RUNNING || m_sample_now > 0) {
+			sample = true;
+		}
+
+		if (m_sample_now == m_sample_len) {
+			m_sample_mode_last = m_sample_mode;
+			m_sample_mode = DEBUG_SAMPLING_OFF;
+			chSysLockFromISR();
+			chEvtSignalI(sample_send_tp, (eventmask_t) 1);
+			chSysUnlockFromISR();
+		}
+		break;
+
+	case DEBUG_SAMPLING_TRIGGER_START:
+	case DEBUG_SAMPLING_TRIGGER_START_NOSEND: {
+		sample = true;
+
+		int sample_last = -1;
+		if (m_sample_trigger >= 0) {
+			sample_last = m_sample_trigger - m_sample_len;
+			if (sample_last < 0) {
+				sample_last += ADC_SAMPLE_MAX_LEN;
+			}
+		}
+
+		if (m_sample_now == sample_last) {
+			m_sample_mode_last = m_sample_mode;
+			sample = false;
+
+			if (m_sample_mode == DEBUG_SAMPLING_TRIGGER_START) {
+				chSysLockFromISR();
+				chEvtSignalI(sample_send_tp, (eventmask_t) 1);
+				chSysUnlockFromISR();
+			}
+
+			m_sample_mode = DEBUG_SAMPLING_OFF;
+		}
+
+		if (state == MC_STATE_RUNNING && m_sample_trigger < 0) {
+			m_sample_trigger = m_sample_now;
+		}
+	} break;
+
+	case DEBUG_SAMPLING_TRIGGER_FAULT:
+	case DEBUG_SAMPLING_TRIGGER_FAULT_NOSEND: {
+		sample = true;
+
+		int sample_last = -1;
+		if (m_sample_trigger >= 0) {
+			sample_last = m_sample_trigger - m_sample_len;
+			if (sample_last < 0) {
+				sample_last += ADC_SAMPLE_MAX_LEN;
+			}
+		}
+
+		if (m_sample_now == sample_last) {
+			m_sample_mode_last = m_sample_mode;
+			sample = false;
+
+			if (m_sample_mode == DEBUG_SAMPLING_TRIGGER_FAULT) {
+				chSysLockFromISR();
+				chEvtSignalI(sample_send_tp, (eventmask_t) 1);
+				chSysUnlockFromISR();
+			}
+
+			m_sample_mode = DEBUG_SAMPLING_OFF;
+		}
+
+		if (motor->m_fault_now != FAULT_CODE_NONE && m_sample_trigger < 0) {
+			m_sample_trigger = m_sample_now;
+		}
+	} break;
+
+	default:
+		break;
+	}
+
+	if (sample) {
+		static int a = 0;
+		a++;
+
+		if (a >= m_sample_int) {
+			a = 0;
+
+			if (m_sample_now >= ADC_SAMPLE_MAX_LEN) {
+				m_sample_now = 0;
+			}
+
+			int16_t zero;
+			if (conf_now->motor_type == MOTOR_TYPE_FOC) {
+				if (is_second_motor) {
+					zero = (ADC_V_L4 + ADC_V_L5 + ADC_V_L6) / 3;
+				} else {
+					zero = (ADC_V_L1 + ADC_V_L2 + ADC_V_L3) / 3;
+				}
+				m_phase_samples[m_sample_now] = (uint8_t)(mcpwm_foc_get_phase() / 360.0 * 250.0);
+//				m_phase_samples[m_sample_now] = (uint8_t)(mcpwm_foc_get_phase_observer() / 360.0 * 250.0);
+//				float ang = utils_angle_difference(mcpwm_foc_get_phase_observer(), mcpwm_foc_get_phase_encoder()) + 180.0;
+//				m_phase_samples[m_sample_now] = (uint8_t)(ang / 360.0 * 250.0);
+			} else {
+				zero = mcpwm_vzero;
+				m_phase_samples[m_sample_now] = 0;
+			}
+
+			if (state == MC_STATE_DETECTING) {
+				m_curr0_samples[m_sample_now] = (int16_t)mcpwm_detect_currents[mcpwm_get_comm_step() - 1];
+				m_curr1_samples[m_sample_now] = (int16_t)mcpwm_detect_currents_diff[mcpwm_get_comm_step() - 1];
+
+				m_ph1_samples[m_sample_now] = (int16_t)mcpwm_detect_voltages[0];
+				m_ph2_samples[m_sample_now] = (int16_t)mcpwm_detect_voltages[1];
+				m_ph3_samples[m_sample_now] = (int16_t)mcpwm_detect_voltages[2];
+			} else {
+				if (is_second_motor) {
+					m_curr0_samples[m_sample_now] = ADC_curr_norm_value[3];
+					m_curr1_samples[m_sample_now] = ADC_curr_norm_value[4];
+
+					m_ph1_samples[m_sample_now] = ADC_V_L4 - zero;
+					m_ph2_samples[m_sample_now] = ADC_V_L5 - zero;
+					m_ph3_samples[m_sample_now] = ADC_V_L6 - zero;
+				} else {
+					m_curr0_samples[m_sample_now] = ADC_curr_norm_value[0];
+					m_curr1_samples[m_sample_now] = ADC_curr_norm_value[1];
+
+					m_ph1_samples[m_sample_now] = ADC_V_L1 - zero;
+					m_ph2_samples[m_sample_now] = ADC_V_L2 - zero;
+					m_ph3_samples[m_sample_now] = ADC_V_L3 - zero;
+				}
+			}
+
+			m_vzero_samples[m_sample_now] = zero;
+			m_curr_fir_samples[m_sample_now] = (int16_t)(current * (8.0 / FAC_CURRENT));
+			m_f_sw_samples[m_sample_now] = (int16_t)(0.1 / t_samp);
+			m_status_samples[m_sample_now] = mcpwm_get_comm_step() | (mcpwm_read_hall_phase() << 3);
+
+			m_sample_now++;
+
+			m_last_adc_duration_sample = mc_interface_get_last_inj_adc_isr_duration();
 		}
 	}
 }
@@ -2545,6 +2771,78 @@ static THD_FUNCTION(stat_thread, arg) {
 #endif
 
 		chThdSleepMilliseconds(10);
+	}
+}
+
+static THD_FUNCTION(sample_send_thread, arg) {
+	(void)arg;
+
+	chRegSetThreadName("SampleSender");
+	sample_send_tp = chThdGetSelfX();
+
+	for(;;) {
+		chEvtWaitAny((eventmask_t) 1);
+
+		int len = 0;
+		int offset = 0;
+
+		switch (m_sample_mode_last) {
+		case DEBUG_SAMPLING_NOW:
+		case DEBUG_SAMPLING_START:
+			len = m_sample_len;
+			break;
+
+		case DEBUG_SAMPLING_TRIGGER_START:
+		case DEBUG_SAMPLING_TRIGGER_FAULT:
+		case DEBUG_SAMPLING_TRIGGER_START_NOSEND:
+		case DEBUG_SAMPLING_TRIGGER_FAULT_NOSEND:
+			len = ADC_SAMPLE_MAX_LEN;
+			offset = m_sample_trigger - m_sample_len;
+			break;
+
+		default:
+			break;
+		}
+
+		for (int i = 0;i < len;i++) {
+			uint8_t buffer[40];
+			int32_t index = 0;
+			int ind_samp = i + offset;
+
+			while (ind_samp >= ADC_SAMPLE_MAX_LEN) {
+				ind_samp -= ADC_SAMPLE_MAX_LEN;
+			}
+
+			while (ind_samp < 0) {
+				ind_samp += ADC_SAMPLE_MAX_LEN;
+			}
+
+			buffer[index++] = COMM_SAMPLE_PRINT;
+
+			if (m_sample_raw) {
+				buffer_append_float32_auto(buffer, (float)m_curr0_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_curr1_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_ph1_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_ph2_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_ph3_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_vzero_samples[ind_samp], &index);
+				buffer_append_float32_auto(buffer, (float)m_curr_fir_samples[ind_samp], &index);
+			} else {
+				buffer_append_float32_auto(buffer, (float)m_curr0_samples[ind_samp] * FAC_CURRENT, &index);
+				buffer_append_float32_auto(buffer, (float)m_curr1_samples[ind_samp] * FAC_CURRENT, &index);
+				buffer_append_float32_auto(buffer, ((float)m_ph1_samples[ind_samp] / 4096.0 * V_REG) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR, &index);
+				buffer_append_float32_auto(buffer, ((float)m_ph2_samples[ind_samp] / 4096.0 * V_REG) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR, &index);
+				buffer_append_float32_auto(buffer, ((float)m_ph3_samples[ind_samp] / 4096.0 * V_REG) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_PH_FACTOR, &index);
+				buffer_append_float32_auto(buffer, ((float)m_vzero_samples[ind_samp] / 4096.0 * V_REG) * ((VIN_R1 + VIN_R2) / VIN_R2) * ADC_VOLTS_INPUT_FACTOR, &index);
+				buffer_append_float32_auto(buffer, (float)m_curr_fir_samples[ind_samp] / (8.0 / FAC_CURRENT), &index);
+			}
+
+			buffer_append_float32_auto(buffer, (float)m_f_sw_samples[ind_samp] * 10.0, &index);
+			buffer[index++] = m_status_samples[ind_samp];
+			buffer[index++] = m_phase_samples[ind_samp];
+
+			send_func_sample(buffer, index);
+		}
 	}
 }
 
