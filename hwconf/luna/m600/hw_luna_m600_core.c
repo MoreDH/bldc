@@ -390,8 +390,8 @@ bool hw_m600_has_fixed_throttle_level(void) {
 	}
 }
 
-float hw_get_PAS_torque(void) {
-	return luna_canbus_get_PAS_torque();
+float hw_get_pedal_torque(void) {
+	return luna_get_pedal_torque();
 }
 
 float hw_get_encoder_error(void) {

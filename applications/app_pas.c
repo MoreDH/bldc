@@ -223,13 +223,8 @@ static THD_FUNCTION(pas_thread, arg) {
 		thread_ticks = thread_t1 - thread_t0;
 		const systime_t nominal_sleep_ticks = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
 		systime_t sleep_ticks = nominal_sleep_ticks - thread_ticks;
-
-		if (sleep_ticks > nominal_sleep_ticks) {
-			sleep_ticks = nominal_sleep_ticks; // maximum
-		}
-		if (sleep_ticks <= 0) {
-			sleep_ticks = 1; // minimum, 1 tick sleep to not block the other threads
-		}
+		sleep_ticks = MIN(sleep_ticks, nominal_sleep_ticks); // Limit max to nominal
+		sleep_ticks = MAX(sleep_ticks, nominal_sleep_ticks / 2); // Limit min to nominal / 2
 		chThdSleep(sleep_ticks);
 
 		if (stop_now) {
@@ -276,7 +271,7 @@ static THD_FUNCTION(pas_thread, arg) {
 			{
 				const float PAS_UPDATE_RATE_HZ = 100.0f;
 				const float LOW_PASS_FILTER_HZ = PAS_UPDATE_RATE_HZ / 4;
-				pedal_torque = hw_get_PAS_torque();
+				pedal_torque = hw_get_pedal_torque();
 				pedal_torque_filter = filter_bw2(config.update_rate_hz, LOW_PASS_FILTER_HZ, pedal_torque, &pedal_torque_prev1, &pedal_torque_prev2, &pedal_torque_filter_prev1, &pedal_torque_filter_prev2);
 				pedal_torque_prev2 = pedal_torque_prev1;
 				pedal_torque_prev1 = pedal_torque;

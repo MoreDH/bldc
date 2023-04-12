@@ -21,7 +21,7 @@
 #ifndef HW_LUNA_M600_H_
 #define HW_LUNA_M600_H_
 
-#define FW_NAME					"2023.03.16 MoreDH"
+#define FW_NAME					"2023.04.12 MoreDH"
 
 #include "mcconf_luna_m600.h"
 #include "appconf_luna_m600.h"
@@ -174,7 +174,7 @@
                                 
 // Use these temperature channels for extra logging insight
 //log torque sensor data
-#define NTC_TEMP_MOS1()         hw_get_PAS_torque()
+#define NTC_TEMP_MOS1()         hw_get_pedal_torque()
 //log throttle data
 #define NTC_TEMP_MOS2()         ((float)ADC_VOLTS(ADC_IND_EXT))
 // log gate driver supply voltage
@@ -347,7 +347,7 @@ float hw_get_distance_abs(void);
 float hw_get_mosfet_temp_filtered(void);
 bool hw_luna_m600_shutdown_button_down(void);
 bool hw_luna_m600_minus_button_down(void);
-float hw_get_PAS_torque(void);
+float hw_get_pedal_torque(void);
 bool hw_m600_has_fixed_throttle_level(void);
 void hw_recover_encoder_offset(void);
 float hw_get_encoder_error(void);

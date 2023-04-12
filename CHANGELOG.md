@@ -1,5 +1,5 @@
 ### 6.02
-#### 2023.03.16 MoreDH
+#### 2023.04.12 MoreDH
 * Battery SOC% is now mapped from 4.19 to 3.0V.
 * PAS pedal timeout 5 -> 2.5s.
 * More consistent PAS loop times.

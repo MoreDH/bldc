@@ -113,7 +113,7 @@ typedef struct{
 	LUNA_PAS_LEVEL pas_level;
 	LUNA_ERROR_CODES error_code;
 	bool torque_sensor_is_active;
-	float pas_torque;
+	float pedal_torque_norm;
 	uint8_t assist_code;
 }luna_settings_t;
 
@@ -121,7 +121,7 @@ static volatile luna_settings_t luna_settings =	{	.light_mode = LUNA_LIGHT_MODE_
 													.pas_level = PAS_LEVEL_0,
 													.error_code = LUNA_ERROR_NONE,
 													.torque_sensor_is_active = false,
-													.pas_torque = 0.0
+													.pedal_torque_norm = 0.0
 												};
 static volatile bool display_thread_is_running = false;
 static volatile bool display_uart_is_running = false;
@@ -154,12 +154,8 @@ void luna_canbus_start(void) {
  * @return
  * 0.0 for no torque applied, 1.0 for maximum torque applied
  */
-float luna_canbus_get_PAS_torque(void){
-	return luna_settings.pas_torque / (LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE);
-}
-
-uint16_t luna_canbus_get_max_torque_level(void){
-	return (LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE);
+float luna_get_pedal_torque(void){
+	return luna_settings.pedal_torque_norm;
 }
 
 /**
@@ -549,44 +545,36 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 	LUNA_CAN_IDs cmd_id = id;
 
 	switch(cmd_id){
-	case LUNA_DISPLAY_ID1:{
-		if(len == LUNA_DISPLAY_ID1_LENGTH_BYTES){
-			if(data != NULL){
-				used_data = true;
+		case LUNA_DISPLAY_ID1:{
+			if(len == LUNA_DISPLAY_ID1_LENGTH_BYTES){
+				if(data != NULL){
+					used_data = true;
 
-				if(check_assist_level(data[1])){
-					luna_settings.pas_level = data[1];
-					set_assist_level(luna_settings.pas_level);
-				}
+					if(check_assist_level(data[1])){
+						luna_settings.pas_level = data[1];
+						set_assist_level(luna_settings.pas_level);
+					}
 
-				if(check_light_mode(data[2])){
-					luna_settings.light_mode = data[2];
+					if(check_light_mode(data[2])){
+						luna_settings.light_mode = data[2];
+					}
 				}
 			}
+			break;
 		}
-		break;
-	}
-	case LUNA_TORQUE_SENSOR_ID:{
-		if(len == LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES){
-			if(data != NULL){
-				used_data = true;
-				luna_settings.torque_sensor_is_active = true;
-				uint16_t torque_raw_level = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0]&0x00ff);
-
-				if(torque_raw_level > LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE){
-					torque_raw_level = LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE;
+		case LUNA_TORQUE_SENSOR_ID:{
+			if(len == LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES){
+				if(data != NULL){
+					used_data = true;
+					luna_settings.torque_sensor_is_active = true;
+					uint16_t torque_raw = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0]&0x00ff);
+					float torque_norm = ((float)torque_raw - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE) / (LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE);
+					utils_truncate_number(&torque_norm, 0, 1);
+					luna_settings.pedal_torque_norm = torque_norm;
 				}
-
-				if(torque_raw_level > LUNA_TORQUE_SENSOR_MINIMUM_TORQUE){
-					torque_raw_level = torque_raw_level - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE;
-				}else{
-					torque_raw_level = 0;
-				}
-				UTILS_LP_FAST(luna_settings.pas_torque, (float)torque_raw_level, 0.1);
 			}
+			break;
 		}
-		break;
-	}
 	}
 	return used_data;
 }
@@ -690,7 +678,7 @@ static THD_FUNCTION(display_process_thread, arg) {
 		}
 		// when PAS level set to 0, the system would shut down after 10 minutes of non-assisted pedaling
 		// so we force it to stay ON if there is pedal activity
-		if(luna_canbus_get_PAS_torque() > 0.25) {
+		if(luna_get_pedal_torque() > 0.25) {
 			shutdown_reset_timer();
 		}
 
