@@ -36,9 +36,8 @@
 
 #include "mcpwm_foc.h" // for encoder angle error
 
-#define LUNA_TORQUE_SENSOR_DEFAULT_TORQUE	0x02EE
-#define LUNA_TORQUE_SENSOR_MINIMUM_TORQUE	0x0300
-#define LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE	0x0600
+#define LUNA_TORQUE_SENSOR_MINIMUM_TORQUE	0x02EE
+#define LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE	0x0C80
 
 typedef enum {
 	PAS_LEVEL_0 = 0x00,
@@ -239,7 +238,6 @@ static void set_assist_level(uint8_t assist_code) {
 	luna_settings.assist_code = assist_code;
 
 	switch (assist_code) {
-		case PAS_LEVEL_WALK:	current_scale = 0.050; break;
 		case PAS_LEVEL_0:		current_scale = 0.050; break;
 		case PAS_LEVEL_1:		current_scale = 0.100; break;
 		case PAS_LEVEL_2:		current_scale = 0.150; break;
@@ -250,6 +248,7 @@ static void set_assist_level(uint8_t assist_code) {
 		case PAS_LEVEL_7:		current_scale = 0.548; break;
 		case PAS_LEVEL_8:		current_scale = 0.740; break;
 		case PAS_LEVEL_9:		current_scale = 1.000; break;
+		case PAS_LEVEL_WALK:	current_scale = 1.000; break;
 		default: return;
 	}
 
@@ -567,7 +566,7 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 				if(data != NULL){
 					used_data = true;
 					luna_settings.torque_sensor_is_active = true;
-					uint16_t torque_raw = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0]&0x00ff);
+					uint16_t torque_raw = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0] & 0x00ff);
 					float torque_norm = ((float)torque_raw - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE) / (LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE);
 					utils_truncate_number(&torque_norm, 0, 1);
 					luna_settings.pedal_torque_norm = torque_norm;
@@ -601,10 +600,6 @@ bool luna_display_shutdown_request(void) {
 		button_released = true;
 		if (counter > 0) {
 			counter--;
-
-			if (counter < 50 ) {
-				counter = 0;
-			}
 		}
 	}
 	return (counter > 100 && button_released);
@@ -659,7 +654,7 @@ static THD_FUNCTION(display_process_thread, arg) {
     
 	for(;;) {
 		float uptime = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
-		chThdSleep(MS2ST(5));
+		chThdSleepMilliseconds(5);
 		can_bus_display_process(5);
 
 		static bool encoder_recovery_done = false;

@@ -29,7 +29,6 @@
 #include "comm_can.h"
 #include "hw.h"
 #include <math.h>
-#include "digital_filter.h"
 #include <stdio.h>
 #include "commands.h"
 #include "terminal.h"
@@ -56,11 +55,7 @@ static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
 float pedal_torque;
-float pedal_torque_prev1 = 0;
-float pedal_torque_prev2 = 0;
 float pedal_torque_filter;
-float pedal_torque_filter_prev1 = 0;
-float pedal_torque_filter_prev2 = 0;
 float output = 0;
 systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
 
@@ -269,15 +264,14 @@ static THD_FUNCTION(pas_thread, arg) {
 #ifdef HW_HAS_PAS_TORQUE_SENSOR
 			case PAS_CTRL_TYPE_TORQUE:
 			{
-				const float PAS_UPDATE_RATE_HZ = 100.0f;
-				const float LOW_PASS_FILTER_HZ = PAS_UPDATE_RATE_HZ / 4;
 				pedal_torque = hw_get_pedal_torque();
-				pedal_torque_filter = filter_bw2(config.update_rate_hz, LOW_PASS_FILTER_HZ, pedal_torque, &pedal_torque_prev1, &pedal_torque_prev2, &pedal_torque_filter_prev1, &pedal_torque_filter_prev2);
-				pedal_torque_prev2 = pedal_torque_prev1;
-				pedal_torque_prev1 = pedal_torque;
-				pedal_torque_filter_prev2 = pedal_torque_filter_prev1;
-				pedal_torque_filter_prev1 = pedal_torque_filter;
-				output = utils_throttle_curve(pedal_torque_filter, -3.0, 0.0, 2) * config.current_scaling * sub_scaling;
+				float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
+				const float pedal_hz = 1.5; // 90 rpm cadence
+				const float lpf_hz = pedal_hz / 3.0;
+				float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+				float lpf_constant = dt / (dt + rc);
+				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
+				output = utils_throttle_curve(pedal_torque_filter, -4.0, 0.0, 2) * config.current_scaling * sub_scaling;
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */

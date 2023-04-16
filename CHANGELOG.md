@@ -1,14 +1,15 @@
 ### 6.02
-#### 2023.04.12 MoreDH
-* Battery SOC% is now mapped from 4.19 to 3.0V.
+#### 2023.04.16 MoreDH
+* Battery SOC% is now mapped from 4.18 to 3.0V.
 * PAS pedal timeout 5 -> 2.5s.
 * More consistent PAS loop times.
-* PAS torque filtered new butterworth 2nd order low pass filter.
+* Tuned pedal torque low pass filter to 90 rpm cadence (1.5 Hz).
 * PAS0-9 is 2 zone.
 	* LINEAR-PAS0-5 (0.05, 0.1, 0.15, 0.2, 0.25, 0.3)
 	* EXPO-PAS6-9(0.405, 0.548, 0.74, 1)
-* PAS pedal torque to motor output is progressive (-3.0/poly).
-* Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.5/0.3s, no field weakening.
+* PAS pedal torque to motor output is progressive (-4.0/poly).
+* Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.3/0.2s, no field weakening.
+* PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.
 	
 ---
 
