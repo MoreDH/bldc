@@ -346,16 +346,28 @@ float hw_get_mosfet_temp_filtered(void) {
 	return mosfet_temp_filtered;
 }
 
+float shutdown_filtered = 0.0;
 bool hw_luna_m600_shutdown_button_down(void) {
-	static float button_filtered = 0.0;
-	UTILS_LP_FAST(button_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), 0.01);
-	return (button_filtered < 1.35);
+	float dt_shutdown = 0.01;
+	const float lpf_hz = 1.0;
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	float lpf_constant = dt_shutdown / (dt_shutdown + rc);
+	UTILS_LP_FAST(shutdown_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), lpf_constant);
+	return shutdown_filtered < 1.0; // 2.9V none, 1.4V minus, 0.5V shutdown, 0.1V minus and shutdown
 }
 
+float hw_luna_m600_shutdown_button_value(void) {
+	return shutdown_filtered;
+}
+
+float minus_filtered = 0.0;
 bool hw_luna_m600_minus_button_down(void) {
-	static float button_filtered = 0.0;
-	UTILS_LP_FAST(button_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), 0.05);
-	return (button_filtered >= 1.35 && button_filtered < 2.0);
+	float dt_display = 0.005;
+	const float lpf_hz = 1.0;
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	float lpf_constant = dt_display / (dt_display + rc);
+	UTILS_LP_FAST(minus_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), lpf_constant);
+	return minus_filtered >= 1.0 && minus_filtered < 2.0; // 2.9V none, 1.4V minus, 0.5V shutdown, 0.1V minus and shutdown
 }
 
 static void terminal_cmd_set_m600_use_fixed_throttle_level(int argc, const char **argv) {
@@ -392,6 +404,10 @@ bool hw_m600_has_fixed_throttle_level(void) {
 
 float hw_get_pedal_torque(void) {
 	return luna_get_pedal_torque();
+}
+
+uint32_t hw_get_torque_dt(void) {
+	return luna_get_torque_dt();
 }
 
 float hw_get_encoder_error(void) {

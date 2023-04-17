@@ -25,4 +25,5 @@
 void luna_canbus_start(void);
 float luna_get_pedal_torque(void);
 float get_encoder_error(void);
+uint32_t luna_get_torque_dt(void);
 #endif /* APP_LUNA_DISPLAY_CANBUS_H_ */

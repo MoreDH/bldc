@@ -104,7 +104,7 @@ void app_pas_start(bool is_primary_output) {
 	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
-		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-pedRpm, 4-output, 5-threadTicks] [Sample Count]",
+		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-pedRpm, 5-threadTicks, 6-trqDt, 7-shutdownFlt] [Sample Count]",
 		terminal_sample);
 	terminal_register_command_callback(
 		"pas_plot",
@@ -355,6 +355,7 @@ static void terminal_sample(int argc, const char **argv) {
 }
 
 static void terminal_experiment(int argc, const char **argv) {
+	static bool initialized = false;
 	if (argc == 3) {
 		int field = 0;
 		int graph = 1;
@@ -380,13 +381,16 @@ static void terminal_experiment(int argc, const char **argv) {
 				debug_experiment_6 = field;
 				break;
 		}
-		commands_init_plot("Milliseconds", "PAS Debug");
-		commands_plot_add_graph("1");
-		commands_plot_add_graph("2");
-		commands_plot_add_graph("3");
-		commands_plot_add_graph("4");
-		commands_plot_add_graph("5");
-		commands_plot_add_graph("6");
+		if( initialized ){
+			commands_init_plot("Milliseconds", "PAS Debug");
+			commands_plot_add_graph("1");
+			commands_plot_add_graph("2");
+			commands_plot_add_graph("3");
+			commands_plot_add_graph("4");
+			commands_plot_add_graph("5");
+			commands_plot_add_graph("6");
+			initialized = true;
+		}
 	} else {
 		commands_printf("This command requires two arguments.\n");
 	}
@@ -400,11 +404,15 @@ static float debug_get_field(int index) {
 		case(2):
 			return pedal_torque_filter;
 		case(3):
-			return pedal_rpm;
-		case(4):
 			return output;
+		case(4):
+			return pedal_rpm;
 		case(5):
 			return thread_ticks;
+		case(6):
+			return hw_get_torque_dt();
+		case(7):
+			return hw_luna_m600_shutdown_button_value();
 
 		default:
 			return 0;

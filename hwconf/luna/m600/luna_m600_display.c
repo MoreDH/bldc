@@ -269,6 +269,11 @@ float distance;
 float time_since_display_change=0;
 uint16_t distance_display;
 			
+uint32_t delay_between_torque_sensor_message = 0;
+uint32_t luna_get_torque_dt(void){
+	return delay_between_torque_sensor_message;
+}
+
 /**
  * State machine for display functions and error handling  
  *
@@ -280,7 +285,6 @@ static void can_bus_display_process(uint32_t dt_ms){
 	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
 	static can_display_process_states_t can_display_process_state = SEND_BATTERY_RANGE_STATE;
 	static uint32_t delay_between_states = 0;
-	static uint32_t delay_between_torque_sensor_message = 0;
 
 //check if torque sensor is active or not
 	if(luna_settings.torque_sensor_is_active){
@@ -341,10 +345,6 @@ static void can_bus_display_process(uint32_t dt_ms){
 
 	if(mc_interface_get_configuration()->foc_encoder_offset == 400.0) {
 		luna_settings.error_code = LUNA_ERROR_ENCODER;
-	}
-
-	if(hw_luna_m600_shutdown_button_down()) {
-		can_display_process_state = SEND_SHUTDOWN_STATE;
 	}
 
 	delay_between_states += dt_ms;
@@ -578,33 +578,6 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 	return used_data;
 }
 
-bool luna_display_shutdown_request(void) {
-	static uint16_t counter = 0;
-
-	bool button_down = hw_luna_m600_shutdown_button_down();
-    bool button_released = false;
-	static bool first_press = true;
-
-	// With the bike off, if you press the power button and never release it
-	// the bike shouldn't turn on and then power off, so ignore the first release
-	if (button_down && first_press) {
-		return false;
-	} else {
-		first_press = false;
-	}
-
-	// while button is pressed, increment a counter. If released, after 500ms reset the counter to 0
-	if(button_down) {
-		counter++;
-	} else {
-		button_released = true;
-		if (counter > 0) {
-			counter--;
-		}
-	}
-	return (counter > 100 && button_released);
-}
-
 // If user long-presses the (-) button, walk mode is engaged.
 // Controller will target a specific RPM and hold it until the button is released
 // The speed control must have a slow ramp, the allowed current is TBD.
@@ -653,7 +626,7 @@ static THD_FUNCTION(display_process_thread, arg) {
 	comm_can_set_eid_rx_callback( can_bus_rx_callback );
     
 	for(;;) {
-		float uptime = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+		float uptime = chVTGetSystemTime() / (float) CH_CFG_ST_FREQUENCY;
 		chThdSleepMilliseconds(5);
 		can_bus_display_process(5);
 
@@ -677,19 +650,12 @@ static THD_FUNCTION(display_process_thread, arg) {
 			shutdown_reset_timer();
 		}
 
-		// consider shutting down in case of battery undervoltage. Power button can turn it on only if Vin>25V
-		// BMS typically trips at 2.8V/cell
-		if(luna_display_shutdown_request()) {
-			conf_general_store_backup_data();
-			HW_SHUTDOWN_HOLD_OFF();		// night night
-		}
-
 		if (luna_settings.assist_code == PAS_LEVEL_WALK) {
 			//disable ADC & PAS apps for 50 millisec
 			app_disable_output(50);
 
 			if(luna_display_walk_mode_long_pressed()) {
-				//send speed command. Sloow 500rpm/sec ramp
+				//send speed command. Slow 500rpm/sec ramp
 				mc_interface_set_pid_speed(2500.0);
 				timeout_reset();
 			} else {
