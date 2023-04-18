@@ -99,13 +99,18 @@ typedef enum {
 } LUNA_ERROR_CODES;
 
 typedef enum{
-	SEND_BATTERY_RANGE_STATE,
-	SEND_SPEED_CURRENT_VOLTAGE_STATE,
-	SEND_SPEED_LIMIT_WHEEL_SIZE_STATE,
-	SEND_CALORIES_STATE,
-	SEND_ERROR_STATE,
-	SEND_SHUTDOWN_STATE,
-}can_display_process_states_t;
+	STATE_BATTERY_RANGE,
+	STATE_SPEED_CURRENT_VOLTAGE,
+	STATE_REFRESH,
+	STATE_SPEED_LIMIT_WHEEL_SIZE,
+	STATE_CALORIES,
+	STATE_FAULTS,
+} can_display_process_states_t;
+
+typedef struct{
+	uint32_t interval_ms;
+	uint32_t time_since_ms;
+} state_schedule_t;
 
 typedef struct{
 	LUNA_LIGHT_CONTROL_MODE light_mode;
@@ -114,7 +119,7 @@ typedef struct{
 	bool torque_sensor_is_active;
 	float pedal_torque_norm;
 	uint8_t assist_code;
-}luna_settings_t;
+} luna_settings_t;
 
 static volatile luna_settings_t luna_settings =	{	.light_mode = LUNA_LIGHT_MODE_OFF,
 													.pas_level = PAS_LEVEL_0,
@@ -132,14 +137,11 @@ static THD_FUNCTION(display_process_thread, arg);
 static bool check_light_mode(uint8_t light_mode);
 static bool check_assist_level(uint8_t assist_code);
 static void set_assist_level(uint8_t assist_code);
-static void can_bus_display_process(uint32_t dt_ms);
-static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len);
 
 /**
  * Initialize the display and torque sensor for M600 drive units
  */
 void luna_canbus_start(void) {
-
 	if (!display_thread_is_running) {
 		chThdCreateStatic(display_process_thread_wa, sizeof(display_process_thread_wa),
 				NORMALPRIO, display_process_thread, NULL);
@@ -233,7 +235,7 @@ static bool check_assist_level(uint8_t assist_code) {
  */
 static void set_assist_level(uint8_t assist_code) {
 	float current_scale;
-    volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
+	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
 
 	luna_settings.assist_code = assist_code;
 
@@ -268,7 +270,7 @@ static void set_assist_level(uint8_t assist_code) {
 float distance;
 float time_since_display_change=0;
 uint16_t distance_display;
-			
+
 uint32_t delay_between_torque_sensor_message = 0;
 uint32_t luna_get_torque_dt(void){
 	return delay_between_torque_sensor_message;
@@ -280,261 +282,222 @@ uint32_t luna_get_torque_dt(void){
  * @param dt_ms
  * Time since last call to this function
  */
-static void can_bus_display_process(uint32_t dt_ms){
+static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_schedule, uint8_t n_states){
 	static uint8_t can_tx_buffer[8];
 	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
-	static can_display_process_states_t can_display_process_state = SEND_BATTERY_RANGE_STATE;
 	static uint32_t delay_between_states = 0;
 
-//check if torque sensor is active or not
-	if(luna_settings.torque_sensor_is_active){
+	//check if torque sensor is active or not
+	if( luna_settings.torque_sensor_is_active ){
 		luna_settings.torque_sensor_is_active = false;
 		delay_between_torque_sensor_message = 0;
 		if(	luna_settings.error_code == LUNA_ERROR_TORQUE_SENSOR){
 			luna_settings.error_code = LUNA_ERROR_NONE;
 		}
-	}else{
+	} else {
 		//fault if sensor data stops for >500ms, but also allow 3sec for sensor to boot
 		delay_between_torque_sensor_message += dt_ms;
 		float uptime = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
-		if(delay_between_torque_sensor_message > 500 && uptime > 3.0){
+		if( delay_between_torque_sensor_message > 500 && uptime > 3.0 ){
 			delay_between_torque_sensor_message = 0;
 			//luna_settings.error_code = LUNA_ERROR_TORQUE_SENSOR;
 		}
 	}
 
-	if(luna_settings.error_code == LUNA_ERROR_NONE){
+	if( luna_settings.error_code == LUNA_ERROR_NONE ){
 		//check if vesc has got any faults
 		mc_fault_code vesc_fault = mc_interface_get_fault();
-		switch(vesc_fault){
-		case FAULT_CODE_NONE:{
-			break;
-		}
-		case FAULT_CODE_ABS_OVER_CURRENT:
-		case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_1:
-		case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_2:
-		case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_3:
-		case FAULT_CODE_UNBALANCED_CURRENTS:{
-			luna_settings.error_code = LUNA_ERROR_CURRENT_SENSOR;
-			break;
-		}
-		case FAULT_CODE_OVER_TEMP_FET:
-			luna_settings.error_code = LUNA_ERROR_MOSFET_OVERTEMP;
-			break;
-		case FAULT_CODE_OVER_TEMP_MOTOR:{
-			luna_settings.error_code = LUNA_ERROR_MOTOR_OVERTEMP;
-			break;
-		}
-		case FAULT_CODE_OVER_VOLTAGE:{
-			luna_settings.error_code = LUNA_ERROR_HIGH_VOLTAGE;
-			break;
-		}
-		case FAULT_CODE_UNDER_VOLTAGE:{
-			luna_settings.error_code = LUNA_ERROR_UNDER_VOLTAGE;
-			break;
-		}
-		case FAULT_CODE_ENCODER_SPI:
-		case FAULT_CODE_ENCODER_NO_MAGNET:{
-			luna_settings.error_code = LUNA_ERROR_ENCODER;
-			break;
-		}
-		default:
-			;//luna_settings.error_code = LUNA_ERROR_COMMUNICATION;
+		switch( vesc_fault ){
+			case FAULT_CODE_NONE:{
+				break;
+			}
+			case FAULT_CODE_ABS_OVER_CURRENT:
+			case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_1:
+			case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_2:
+			case FAULT_CODE_HIGH_OFFSET_CURRENT_SENSOR_3:
+			case FAULT_CODE_UNBALANCED_CURRENTS:{
+				luna_settings.error_code = LUNA_ERROR_CURRENT_SENSOR;
+				break;
+			}
+			case FAULT_CODE_OVER_TEMP_FET: {
+				luna_settings.error_code = LUNA_ERROR_MOSFET_OVERTEMP;
+				break;
+			}
+			case FAULT_CODE_OVER_TEMP_MOTOR:{
+				luna_settings.error_code = LUNA_ERROR_MOTOR_OVERTEMP;
+				break;
+			}
+			case FAULT_CODE_OVER_VOLTAGE:{
+				luna_settings.error_code = LUNA_ERROR_HIGH_VOLTAGE;
+				break;
+			}
+			case FAULT_CODE_UNDER_VOLTAGE:{
+				luna_settings.error_code = LUNA_ERROR_UNDER_VOLTAGE;
+				break;
+			}
+			case FAULT_CODE_ENCODER_SPI:
+			case FAULT_CODE_ENCODER_NO_MAGNET:{
+				luna_settings.error_code = LUNA_ERROR_ENCODER;
+				break;
+			}
+			default:
+				;//luna_settings.error_code = LUNA_ERROR_COMMUNICATION;
 		}
 	}
 
-	if(mc_interface_get_configuration()->foc_encoder_offset == 400.0) {
+	if( mc_interface_get_configuration()->foc_encoder_offset == 400.0 ) {
 		luna_settings.error_code = LUNA_ERROR_ENCODER;
 	}
 
 	delay_between_states += dt_ms;
-
-	//packets are typically sent every 11 msec
-
-	if(delay_between_states > 50){
+	if (delay_between_states >= 50) {
+		// increment state counters
+		for(int i = 0; i < n_states; ++i) {
+			state_schedule[i].time_since_ms += delay_between_states;
+		}
 		delay_between_states = 0;
-		switch(can_display_process_state){
-		case SEND_BATTERY_RANGE_STATE:{
-			// This packet is sent every 250ms
-			float wh_left;
-			float battery_level = mc_interface_get_battery_level(&wh_left) * 100.0;
-			utils_truncate_number((float*)&battery_level, 0.0, 100.0);
 
-			static float last_distance = 0.0;
-			float distance_abs = mc_interface_get_distance_abs();
-			distance = distance_abs - last_distance;
-			
-			// what is sent is 1 / 10 of the value in meters
-			distance_display = (uint16_t) (distance / 10.0);
+		// select most overdue state (or none)
+		int32_t state_selected = -1;
+		int32_t past_due_ms = -1;
+		for(int i = 0; i < n_states; ++i) {
+			int32_t state_past_due_ms = state_schedule[i].time_since_ms - state_schedule[i].interval_ms;
+			if (state_past_due_ms > past_due_ms) {
+				state_selected = i;
+				past_due_ms = state_past_due_ms;
+			}
+		}
+		state_schedule[state_selected].time_since_ms = 0;
 
-			static uint16_t time_at_last_distance_change = 0;
-			static uint16_t last_display_distance = 0;
+		// execute state
+		memset(can_tx_buffer, 0, 8);
+		switch( state_selected ){
+			case -1:{
+				break;
+			}
+			case STATE_BATTERY_RANGE:{
+				float wh_left;
+				float battery_level = mc_interface_get_battery_level(&wh_left) * 100.0;
+				utils_truncate_number(&battery_level, 0.0, 100.0);
 
-			// if distance_display doesn't change for 5 seconds, we have to reset it to zero
-			if (distance_display != last_display_distance) {
-				time_at_last_distance_change = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
-			} else {
-				float current_time = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
+				static float last_distance = 0.0;
+				float distance_abs = mc_interface_get_distance_abs();
+				distance = distance_abs - last_distance;
+				
+				// what is sent is 1 / 10 of the value in meters
+				distance_display = (uint16_t) (distance / 10.0);
 
-				time_since_display_change = current_time - time_at_last_distance_change;//for debug
-				if(current_time - time_at_last_distance_change > 5.0){
-					time_at_last_distance_change = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
-					last_distance = distance_abs;
-					distance = 0;
+				static uint16_t time_at_last_distance_change = 0;
+				static uint16_t last_display_distance = 0;
+
+				// if distance_display doesn't change for 5 seconds, we have to reset it to zero
+				if ( distance_display != last_display_distance ) {
+					time_at_last_distance_change = chVTGetSystemTimeX() / (float) CH_CFG_ST_FREQUENCY;
+				} else {
+					float current_time = chVTGetSystemTimeX() / (float) CH_CFG_ST_FREQUENCY;
+
+					time_since_display_change = current_time - time_at_last_distance_change;//for debug
+					if( current_time - time_at_last_distance_change > 5.0 ){
+						time_at_last_distance_change = chVTGetSystemTimeX() / (float) CH_CFG_ST_FREQUENCY;
+						last_distance = distance_abs;
+						distance = 0;
+						distance_display = 0;
+					}
+				}
+
+				last_display_distance = distance_display;
+				if( distance_display < 5 ) {
+					//make sure the first zero is not skipped. Apparently it's important and needs 4 consecutive zeroes
+					//(or maybe its 1 full second of zeroes)
 					distance_display = 0;
 				}
+
+				static float distance_old = 0;
+				if( distance_abs != distance_old ) {
+				//	commands_printf("time_since_display_change: %.2f",(double)time_since_display_change);
+				//	commands_printf("display_distance: %d",distance_display);
+				//	commands_printf("distance: %.2f",(double)distance);
+				//	commands_printf("odometer: %.2f\n", (double)distance_abs);
+					distance_old = distance_abs;
+				}
+				// If the distance value exceeds 1000 meters, it overflows back to 0 meter
+				if( distance > 1020 ) {
+					last_distance += distance;
+				}
+
+				can_tx_buffer[0] = (uint8_t) battery_level;
+				can_tx_buffer[1] = (uint8_t)(distance_display & 0x00ff);
+				//TODO: support RANGE parameter. 0x1FF = 511 sets RANGE as 5.11 km or 3 miles.
+				//can_tx_buffer[6] = RANGE LSB
+				//can_tx_buffer[7] = RANGE MSB
+				comm_can_transmit_eid(0x02F83200, can_tx_buffer, 8);
+				break;
 			}
+			case STATE_SPEED_CURRENT_VOLTAGE:{
+	#ifdef HW_HAS_WHEEL_SPEED_SENSOR
+				//float wheel_rpm = hw_get_wheel_rpm();
+				//float wheelsize_in_meters = mcconf->si_wheel_diameter / 1000.0;
+				//float speed_km_h = (uint16_t)(wheel_rpm * wheelsize_in_meters * 60.0 / 1000.0);
 
-			last_display_distance = distance_display;
+				//uint16_t speed_display = (uint16_t)(speed_km_h * 100.0);//the display needs [km_h * 100]
+				uint16_t speed_display = (uint16_t)(mc_interface_get_speed() * 3600.0 / 1000.0 * 100.0 );	//the display needs [km_h * 100]
 
-			if(distance_display < 5) {
-				//make sure the first zero is not skipped. Apparently it's important and needs 4 consecutive zeroes
-				//(or maybe its 1 full second of zeroes)
-				distance_display = 0;
+				can_tx_buffer[0] = (uint8_t)(speed_display & 0x00ff);
+				can_tx_buffer[1] = (uint8_t)((speed_display >> 8 ) & 0x00ff);
+	#endif
+				float current = mc_interface_get_tot_current_in_filtered();
+				uint16_t current_display = (uint16_t)(current * 100.0);
+				float voltage = mc_interface_get_input_voltage_filtered();
+				uint16_t voltage_display = voltage * 100;
+
+				can_tx_buffer[2] = (uint8_t)(current_display & 0x00ff);
+				can_tx_buffer[3] = (uint8_t)((current_display >> 8 ) & 0x00ff);
+				can_tx_buffer[4] = (uint8_t)(voltage_display & 0x00ff);
+				can_tx_buffer[5] = (uint8_t)((voltage_display >> 8 ) & 0x00ff);
+				can_tx_buffer[6] = (uint8_t) (mc_interface_temp_fet_filtered() - 40.0);		// 10°C = 10+40=50(32Hex) = 32
+				can_tx_buffer[7] = (uint8_t) (mc_interface_temp_motor_filtered() - 40.0);	// 20°C = 20+40=60(3CHex) = 3C
+				comm_can_transmit_eid(0x02F83201, can_tx_buffer, 8);
+				break;
 			}
-
-			static float distance_old = 0;
-			if(distance_abs != distance_old) {
-			//	commands_printf("time_since_display_change: %.2f",(double)time_since_display_change);
-			//	commands_printf("display_distance: %d",distance_display);
-			//	commands_printf("distance: %.2f",(double)distance);
-			//	commands_printf("odometer: %.2f\n", (double)distance_abs);
-				distance_old = distance_abs;
+			case STATE_REFRESH:{
+				comm_can_transmit_eid(0x02FF1203, can_tx_buffer, 1);
+				break;
 			}
-			
-			
-			memset(can_tx_buffer, 0, 8);
-			can_tx_buffer[0] = (uint8_t) battery_level;
-			can_tx_buffer[1] = (uint8_t)(distance_display & 0x00ff);
-			can_tx_buffer[2] = (uint8_t) 0;
-			can_tx_buffer[3] = (uint8_t) 0;
-			can_tx_buffer[4] = (uint8_t) 0;
-			can_tx_buffer[5] = (uint8_t) 0;
-			can_tx_buffer[6] = (uint8_t) 0;
-			can_tx_buffer[7] = (uint8_t) 0;
+			case STATE_SPEED_LIMIT_WHEEL_SIZE:{
+				//"speed limit" parameter [kmh *100]
+				float speed_limit = 32.2;// dummy 32.2km/h (20mph)
+				uint16_t speed_limit_display = speed_limit * 100;
+				// Arbitrary wheel size definitions from the display
+				uint16_t wheelsize_display;
+				if( mcconf->si_wheel_diameter <= 0.7 ){
+					wheelsize_display = 416; //26"
+				} else if( mcconf->si_wheel_diameter >= 0.75 ){
+					wheelsize_display = 464; //29"
+				} else {
+					wheelsize_display = 437; //27.5"
+				}
 
-			// If the distance value exceeds 1000 meters, it overflows back to 0 meter
-			if(distance > 1020) {
-				last_distance += distance;
+				can_tx_buffer[0] = (uint8_t)(speed_limit_display & 0x00ff);
+				can_tx_buffer[1] = (uint8_t)((speed_limit_display >> 8 ) & 0x00ff);
+				can_tx_buffer[2] = (uint8_t)(wheelsize_display & 0x00ff);
+				can_tx_buffer[3] = (uint8_t)((wheelsize_display >> 8 ) & 0x00ff);
+				can_tx_buffer[4] = 182;
+				can_tx_buffer[5] = 8;
+				comm_can_transmit_eid(0x02F83203, can_tx_buffer, 6);
+				break;
 			}
-			
-			//TODO: support RANGE parameter. 0x1FF = 511 sets RANGE as 5.11 km or 3 miles.
-
-			//can_tx_buffer[6] = RANGE LSB
-			//can_tx_buffer[7] = RANGE MSB
-
-			comm_can_transmit_eid(0x02F83200, can_tx_buffer, 8);
-			can_display_process_state = SEND_SPEED_CURRENT_VOLTAGE_STATE;
-			break;
-		}
-		case SEND_SPEED_CURRENT_VOLTAGE_STATE:{
-			//this packet is sent every 280ms
-
-			memset(can_tx_buffer, 0, 8);
-#ifdef HW_HAS_WHEEL_SPEED_SENSOR
-			//float wheel_rpm = hw_get_wheel_rpm();
-			//float wheelsize_in_meters = mcconf->si_wheel_diameter / 1000.0;
-			//float speed_km_h = (uint16_t)(wheel_rpm * wheelsize_in_meters * 60.0 / 1000.0);
-
-			//uint16_t speed_display = (uint16_t)(speed_km_h * 100.0);//the display needs [km_h * 100]
-			uint16_t speed_display = (uint16_t)(mc_interface_get_speed() * 3600.0 / 1000.0 * 100.0 );	//the display needs [km_h * 100]
-
-			can_tx_buffer[0] = (uint8_t)(speed_display & 0x00ff);
-			can_tx_buffer[1] = (uint8_t)((speed_display >> 8 ) & 0x00ff);
-#endif
-			float current = mc_interface_get_tot_current_in_filtered();
-
-			uint16_t current_display = (uint16_t)(current * 100.0);
-
-			can_tx_buffer[2] = (uint8_t)(current_display & 0x00ff);
-			can_tx_buffer[3] = (uint8_t)((current_display >> 8 ) & 0x00ff);
-
-			float voltage = mc_interface_get_input_voltage_filtered();
-			uint16_t voltage_display = voltage * 100;
-
-			can_tx_buffer[4] = (uint8_t)(voltage_display & 0x00ff);
-			can_tx_buffer[5] = (uint8_t)((voltage_display >> 8 ) & 0x00ff);
-
-			can_tx_buffer[6] = (uint8_t) (mc_interface_temp_fet_filtered() - 40.0);		// 10°C = 10+40=50(32Hex) = 32
-			can_tx_buffer[7] = (uint8_t) (mc_interface_temp_motor_filtered() - 40.0);	// 20°C = 20+40=60(3CHex) = 3C
-
-			comm_can_transmit_eid(0x02F83201, can_tx_buffer, 8);
-			can_display_process_state = SEND_SPEED_LIMIT_WHEEL_SIZE_STATE;
-			break;
-		}
-		case SEND_SPEED_LIMIT_WHEEL_SIZE_STATE:{
-			memset(can_tx_buffer, 0, 8);
-
-			//"speed limit" parameter [kmh *100]
-			float speed_limit = 32.2;// dummy 32.2km/h (20mph)
-			uint16_t speed_limit_display = speed_limit * 100;
-			can_tx_buffer[0] = (uint8_t)(speed_limit_display & 0x00ff);
-			can_tx_buffer[1] = (uint8_t)((speed_limit_display >> 8 ) & 0x00ff);
-
-			// Arbitrary wheel size definitions from the display
-			uint16_t wheelsize_display;
-			if(mcconf->si_wheel_diameter <= 0.7){
-				wheelsize_display = 416; //26"
+			case STATE_CALORIES:{
+				//TODO: support "KCAL" parameter in [kmh *100]
+				//conversion rate: KCAL = value * 0.621368.
+				//For example: 0xFFFF = 65535 sets KCAL as 40722
+				comm_can_transmit_eid(0x02F83205, can_tx_buffer, 2);
+				break;
 			}
-			if(mcconf->si_wheel_diameter >= 0.7){
-				wheelsize_display = 437; //27.5"
-			}
-			if(mcconf->si_wheel_diameter >= 0.75){
-				wheelsize_display = 464; //29"
-			}
-
-			can_tx_buffer[2] = (uint8_t)(wheelsize_display & 0x00ff);
-			can_tx_buffer[3] = (uint8_t)((wheelsize_display >> 8 ) & 0x00ff);
-
-			//these values are fixed
-			can_tx_buffer[4] = 182;
-			can_tx_buffer[5] = 8;
-
-			comm_can_transmit_eid(0x02F83203, can_tx_buffer, 6);
-			can_display_process_state = SEND_CALORIES_STATE;
-			break;
-		}
-		case SEND_CALORIES_STATE:{
-			// this packet is sent every 300msec
-			memset(can_tx_buffer, 0, 8);
-			//TODO: support "KCAL" parameter in [kmh *100]
-			//conversion rate: KCAL = value * 0.621368.
-			//For example: 0xFFFF = 65535 sets KCAL as 40722
-			comm_can_transmit_eid(0x02F83205, can_tx_buffer, 2);
-			can_display_process_state = SEND_ERROR_STATE;
-			break;
-		}
-		case SEND_ERROR_STATE:{
-			// this packet is sent every 500msec
-			static uint8_t send_error_counter = 0;
-
-			memset(can_tx_buffer, 0, 8);
-
-			if(luna_settings.error_code != LUNA_ERROR_NONE){
+			case STATE_FAULTS:{
 				can_tx_buffer[0] = luna_settings.error_code ;
 				comm_can_transmit_eid(0x02FF1200, can_tx_buffer, 1);
-				send_error_counter++;
-
-				if(send_error_counter > 3){
-					send_error_counter = 0;
-					can_display_process_state = SEND_BATTERY_RANGE_STATE;
-				}
-			}else{
-				send_error_counter = 0;
-				can_display_process_state = SEND_BATTERY_RANGE_STATE;
+				break;
 			}
-
-			comm_can_transmit_eid(0x02FF1200, can_tx_buffer, 1);
-			break;
-		}
-		case SEND_SHUTDOWN_STATE:{
-			memset(can_tx_buffer, 0, 8);
-			can_tx_buffer[0] = 0;
-			comm_can_transmit_eid(0x02FF1204, can_tx_buffer, 1);
-			can_display_process_state = SEND_BATTERY_RANGE_STATE;
-
-			break;
-		}
 		}
 	}
 }
@@ -624,11 +587,29 @@ static THD_FUNCTION(display_process_thread, arg) {
 	set_assist_level(PAS_LEVEL_1);
 
 	comm_can_set_eid_rx_callback( can_bus_rx_callback );
-    
+
+	// setting them the same makes them immediately due
+	uint8_t n_states = 6;
+	state_schedule_t state_schedule[n_states];
+	state_schedule[STATE_BATTERY_RANGE]			.time_since_ms	=
+	state_schedule[STATE_BATTERY_RANGE]			.interval_ms	= 1500;
+	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.time_since_ms	=
+	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.interval_ms	= 200;
+	state_schedule[STATE_REFRESH]				.time_since_ms	=
+	state_schedule[STATE_REFRESH]				.interval_ms 	= 100;
+	state_schedule[STATE_SPEED_LIMIT_WHEEL_SIZE].time_since_ms	=
+	state_schedule[STATE_SPEED_LIMIT_WHEEL_SIZE].interval_ms 	= 2000;
+	state_schedule[STATE_CALORIES]				.time_since_ms 	=
+	state_schedule[STATE_CALORIES]				.interval_ms 	= 3000;
+	state_schedule[STATE_FAULTS]				.time_since_ms 	=
+	state_schedule[STATE_FAULTS]				.interval_ms 	= 400;
+
 	for(;;) {
 		float uptime = chVTGetSystemTime() / (float) CH_CFG_ST_FREQUENCY;
-		chThdSleepMilliseconds(5);
-		can_bus_display_process(5);
+		
+		uint32_t dt_ms = 5;
+		chThdSleepMilliseconds(dt_ms);
+		can_bus_display_process(dt_ms, state_schedule, n_states);
 
 		static bool encoder_recovery_done = false;
 		if(encoder_recovery_done) {
