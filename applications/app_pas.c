@@ -266,12 +266,13 @@ static THD_FUNCTION(pas_thread, arg) {
 			{
 				pedal_torque = hw_get_pedal_torque();
 				float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
-				const float pedal_hz = 1.5; // 90 rpm cadence
-				const float lpf_hz = pedal_hz / 3.0;
+				float pedal_cadence_rpm = 70; // 1.1s or 70 rpm works well for long climbs as well as short technical sections
+				//float pedal_cadence_rpm = 180.0 - 120.0 / 1.2 * config.ramp_time_pos; // Maps (1.5..0.3 s) to (30..150 rpm)
+				float lpf_hz = pedal_cadence_rpm / 60 / 1.5;
 				float rc = 1.0 / (2.0 * M_PI * lpf_hz);
 				float lpf_constant = dt / (dt + rc);
 				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
-				output = utils_throttle_curve(pedal_torque_filter, -4.0, 0.0, 2) * config.current_scaling * sub_scaling;
+				output = utils_throttle_curve(pedal_torque_filter, -3.5, 0.0, 2) * config.current_scaling * sub_scaling;
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */

@@ -418,10 +418,10 @@
 #define APPCONF_PAS_USE_FILTER 1
 
 // Positive Ramping Time
-#define APPCONF_PAS_RAMP_TIME_POS 0.3
+#define APPCONF_PAS_RAMP_TIME_POS 0.4
 
 // Negative Ramping Time
-#define APPCONF_PAS_RAMP_TIME_NEG 0.2
+#define APPCONF_PAS_RAMP_TIME_NEG 0.3
 
 // Update Rate
 #define APPCONF_PAS_UPDATE_RATE_HZ 500
