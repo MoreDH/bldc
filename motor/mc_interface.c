@@ -1549,7 +1549,7 @@ float mc_interface_get_battery_level(float *wh_left) {
 	switch (conf->si_battery_type) {
 	case BATTERY_TYPE_LIION_3_0__4_2:
 		battery_avg_voltage = ((3.0 + 4.18) / 2.0) * (float)(conf->si_battery_cells);
-		battery_avg_voltage_left = ((3.0 * (float)(conf->si_battery_cells) + v_in) / 2.0);
+		battery_avg_voltage_left = ((3.0 + v_in) / 2.0) * (float)(conf->si_battery_cells);
 		float batt_left = utils_map(v_in / (float)(conf->si_battery_cells),
 									3.0, 4.18, 0.0, 1.0);
 		batt_left = utils_batt_liion_norm_v_to_capacity(batt_left);
