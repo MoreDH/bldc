@@ -92,6 +92,7 @@ void mc_interface_sample_print_data(debug_sampling_mode mode, uint16_t len, uint
 		void(*reply_func)(unsigned char *data, unsigned int len));
 float mc_interface_temp_fet_filtered(void);
 float mc_interface_temp_motor_filtered(void);
+float mc_interface_input_voltage_filtered(void);
 float mc_interface_get_battery_level(float *wh_left);
 float mc_interface_get_speed(void);
 float mc_interface_get_distance(void);

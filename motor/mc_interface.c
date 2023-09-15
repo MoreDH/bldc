@@ -1529,6 +1529,16 @@ float mc_interface_temp_motor_filtered(void) {
 }
 
 /**
+ * Get filtered battery voltage.
+ *
+ * @return
+ * The filtered battery voltage.
+ */
+float mc_interface_input_voltage_filtered(void) {
+	return motor_now()->m_input_voltage_filtered;
+}
+
+/**
  * Get the battery level, based on battery settings in configuration. Notice that
  * this function is based on remaining watt hours, and not amp hours.
  *
@@ -1549,7 +1559,7 @@ float mc_interface_get_battery_level(float *wh_left) {
 	switch (conf->si_battery_type) {
 	case BATTERY_TYPE_LIION_3_0__4_2:
 		battery_avg_voltage = ((3.0 + 4.18) / 2.0) * (float)(conf->si_battery_cells);
-		battery_avg_voltage_left = ((3.0 + v_in) / 2.0) * (float)(conf->si_battery_cells);
+		battery_avg_voltage_left = ((3.0 * (float)(conf->si_battery_cells) + v_in) / 2.0);
 		float batt_left = utils_map(v_in / (float)(conf->si_battery_cells),
 									3.0, 4.18, 0.0, 1.0);
 		batt_left = utils_batt_liion_norm_v_to_capacity(batt_left);

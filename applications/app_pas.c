@@ -59,6 +59,9 @@ float pedal_torque_filter;
 float output = 0;
 systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
 
+float batt_v = 50.0;
+float batt_factor = 1.0;
+
 // Debug values
 static int debug_sample_field, debug_sample_count, debug_sample_index;
 static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_experiment_4, debug_experiment_5, debug_experiment_6;
@@ -104,7 +107,7 @@ void app_pas_start(bool is_primary_output) {
 	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
-		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-pedRpm, 5-threadTicks, 6-trqDt, 7-shutdownFlt] [Sample Count]",
+		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-trqDt, 7-shutdownFlt] [Sample Count]",
 		terminal_sample);
 	terminal_register_command_callback(
 		"pas_plot",
@@ -272,7 +275,13 @@ static THD_FUNCTION(pas_thread, arg) {
 				float rc = 1.0 / (2.0 * M_PI * lpf_hz);
 				float lpf_constant = dt / (dt + rc);
 				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
-				output = utils_throttle_curve(pedal_torque_filter, -3.5, 0.0, 2) * config.current_scaling * sub_scaling;
+				output = utils_throttle_curve(pedal_torque_filter, -3.0, 0.0, 2) * config.current_scaling * sub_scaling;
+				const float batt_v_min = 39;
+				const float batt_v_max = 54.34;
+				batt_v = mc_interface_input_voltage_filtered();
+				batt_factor = batt_v_max / batt_v;
+				utils_truncate_number(&batt_factor, 1.0, batt_v_max / batt_v_min );
+				output *= batt_factor; // PAS output adjusted for Battery SOC%
 				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
 			}
 			/* fall through */
@@ -407,9 +416,9 @@ static float debug_get_field(int index) {
 		case(3):
 			return output;
 		case(4):
-			return pedal_rpm;
+			return batt_v;
 		case(5):
-			return thread_ticks;
+			return batt_factor;
 		case(6):
 			return hw_get_torque_dt();
 		case(7):
