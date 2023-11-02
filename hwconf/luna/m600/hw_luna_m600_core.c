@@ -502,3 +502,25 @@ static void hw_override_pairing_done(void) {
 		mempools_free_appconf(appconf);
 	}
 }
+
+void hw_setup_pedal_encoder(void) {
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+
+	palSetPadMode(HW_PAS1_PORT, HW_PAS1_PIN, PAL_MODE_ALTERNATE(GPIO_AF_TIM3) | PAL_MODE_INPUT_PULLUP);
+	palSetPadMode(HW_PAS2_PORT, HW_PAS2_PIN, PAL_MODE_ALTERNATE(GPIO_AF_TIM3) | PAL_MODE_INPUT_PULLUP);
+	
+	TIM_TimeBaseInitTypeDef init;
+	init.TIM_Prescaler = 0;
+	init.TIM_CounterMode = TIM_CounterMode_Up;
+	init.TIM_Period = 65535;
+	init.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseInit(TIM3, &init);
+	TIM_EncoderInterfaceConfig(TIM3, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+
+	TIM_SelectOutputTrigger(TIM3, TIM_TRGOSource_Reset);
+	TIM_SelectMasterSlaveMode(TIM3, TIM_MasterSlaveMode_Disable);
+	TIM_Cmd(TIM3, ENABLE);
+}
+
+uint16_t hw_get_pedal_encoder_count(void) { return TIM3->CNT; }

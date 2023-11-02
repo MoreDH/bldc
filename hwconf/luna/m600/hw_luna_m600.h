@@ -21,7 +21,7 @@
 #ifndef HW_LUNA_M600_H_
 #define HW_LUNA_M600_H_
 
-#define FW_NAME					"2023.09.15 MoreDH"
+#define FW_NAME					"2023.11.01 MoreDH"
 
 #include "mcconf_luna_m600.h"
 #include "appconf_luna_m600.h"
@@ -353,5 +353,7 @@ uint32_t hw_get_torque_dt(void);
 bool hw_m600_has_fixed_throttle_level(void);
 void hw_recover_encoder_offset(void);
 float hw_get_encoder_error(void);
+void hw_setup_pedal_encoder(void);
+uint16_t hw_get_pedal_encoder_count(void);
 
 #endif /* HW_LUNA_M600_H_ */

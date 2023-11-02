@@ -59,6 +59,8 @@ float pedal_torque_filter;
 float output = 0;
 systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
 
+float pedal_encoder_count;
+
 float batt_v = 50.0;
 float batt_factor = 1.0;
 
@@ -107,7 +109,7 @@ void app_pas_start(bool is_primary_output) {
 	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
-		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-trqDt, 7-shutdownFlt] [Sample Count]",
+		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-pedCnt, 7-pedRpm] [Sample Count]",
 		terminal_sample);
 	terminal_register_command_callback(
 		"pas_plot",
@@ -150,58 +152,33 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 
-void pas_event_handler(void) {
-#ifdef HW_PAS1_PORT
-	const int8_t QEM[] = {0,-1,1,2,1,0,2,-1,-1,2,0,1,2,1,-1,0}; // Quadrature Encoder Matrix
-	int8_t direction_qem;
-	uint8_t new_state;
-	static uint8_t old_state = 0;
+void update_pedal_rpm(float lpf_constant)
+{
 	static float old_timestamp = 0;
 	static float inactivity_time = 0;
-	static float period_filtered = 0;
-	static int32_t correct_direction_counter = 0;
-
-	uint8_t PAS1_level = palReadPad(HW_PAS1_PORT, HW_PAS1_PIN);
-	uint8_t PAS2_level = palReadPad(HW_PAS2_PORT, HW_PAS2_PIN);
-
-	new_state = PAS2_level * 2 + PAS1_level;
-	direction_qem = (float) QEM[old_state * 4 + new_state];
-	old_state = new_state;
-
-	// Require several quadrature events in the right direction to prevent vibrations from
-	// engging PAS
-	int8_t direction = (direction_conf * direction_qem);
-	
-	switch(direction) {
-		case 1: correct_direction_counter++; break;
-		case -1:correct_direction_counter = 0; break;
-	}
 
 	const float timestamp = (float) chVTGetSystemTime() / CH_CFG_ST_FREQUENCY;
-
-	// sensors are poorly placed, so use only one rising edge as reference
-	if( (new_state == 3) && (correct_direction_counter >= 4) ) {
-		float period = (timestamp - old_timestamp) * config.magnets;
-		old_timestamp = timestamp;
-
-		UTILS_LP_FAST(period_filtered, period, 1.0); // 1.0 is unfiltered
-
-		if(period_filtered < min_pedal_period) { //can't be that short, abort
-			return;
-		}
-		pedal_rpm = 60.0 / period_filtered;
-		pedal_rpm *= (direction_conf * (float) direction_qem);
-		inactivity_time = 0.0;
-	}
-	else {
+	uint16_t count = hw_get_pedal_encoder_count();
+	if( count == pedal_encoder_count )
+	{
 		inactivity_time += 1.0 / config.update_rate_hz;
-
-		//if no pedal activity, set RPM as zero
-		if(inactivity_time > max_pulse_period) {
+		if( inactivity_time > max_pulse_period ) // no pedal activity
+		{
 			pedal_rpm = 0.0;
 		}
 	}
-#endif
+	else
+	{
+		static const float CountsPerRev = 64;
+		float delta_count = pedal_encoder_count - count;
+		float delta_time = timestamp - old_timestamp;
+		float rpm = direction_conf * delta_count / CountsPerRev / delta_time * 60.0;
+		pedal_encoder_count = count;
+		old_timestamp = timestamp;
+		
+		UTILS_LP_FAST(pedal_rpm, rpm, lpf_constant);
+		inactivity_time = 0.0;
+	}
 }
 
 static THD_FUNCTION(pas_thread, arg) {
@@ -209,13 +186,16 @@ static THD_FUNCTION(pas_thread, arg) {
 
 	chRegSetThreadName("APP_PAS");
 
-#ifdef HW_PAS1_PORT
-	palSetPadMode(HW_PAS1_PORT, HW_PAS1_PIN, PAL_MODE_INPUT_PULLUP);
-	palSetPadMode(HW_PAS2_PORT, HW_PAS2_PIN, PAL_MODE_INPUT_PULLUP);
-#endif
+	hw_setup_pedal_encoder();
+
+	float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
+	float lpf_hz = 2;
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	float lpf_constant = dt / (dt + rc);
 
 	is_running = true;
 
+	int iSample = 0;
 	for(;;) {
 		// Sleep for a time according to the specified rate
 		thread_ticks = thread_t1 - thread_t0;
@@ -232,7 +212,14 @@ static THD_FUNCTION(pas_thread, arg) {
 
 		thread_t0 = chVTGetSystemTime();
 
-		pas_event_handler(); // this could happen inside an ISR instead of being polled
+		update_pedal_rpm(lpf_constant);
+
+		// Debug outputs
+		if( iSample++ % 100 == 0 )
+		{
+			debug_sample();
+			debug_experiment();
+		}
 
 		// For safe start when fault codes occur
 		if (mc_interface_get_fault() != FAULT_CODE_NONE) {
@@ -268,12 +255,6 @@ static THD_FUNCTION(pas_thread, arg) {
 			case PAS_CTRL_TYPE_TORQUE:
 			{
 				pedal_torque = hw_get_pedal_torque();
-				float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
-				float pedal_cadence_rpm = 70; // 1.1s or 70 rpm works well for long climbs as well as short technical sections
-				//float pedal_cadence_rpm = 180.0 - 120.0 / 1.2 * config.ramp_time_pos; // Maps (1.5..0.3 s) to (30..150 rpm)
-				float lpf_hz = pedal_cadence_rpm / 60 / 1.5;
-				float rc = 1.0 / (2.0 * M_PI * lpf_hz);
-				float lpf_constant = dt / (dt + rc);
 				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
 				output = utils_throttle_curve(pedal_torque_filter, -3.0, 0.0, 2) * config.current_scaling * sub_scaling;
 				const float batt_v_min = 39;
@@ -342,10 +323,6 @@ static THD_FUNCTION(pas_thread, arg) {
 		else {
 			output_current_rel = output;
 		}
-
-		// Debug outputs
-		debug_sample();
-		debug_experiment();
 
 		thread_t1 = chVTGetSystemTime();
 	}
@@ -420,9 +397,9 @@ static float debug_get_field(int index) {
 		case(5):
 			return batt_factor;
 		case(6):
-			return hw_get_torque_dt();
+			return pedal_encoder_count;
 		case(7):
-			return hw_luna_m600_shutdown_button_value();
+			return pedal_rpm;
 
 		default:
 			return 0;
