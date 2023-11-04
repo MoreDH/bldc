@@ -59,7 +59,7 @@ float pedal_torque_filter;
 float output = 0;
 systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
 
-float pedal_encoder_count;
+int16_t pedal_encoder_count;
 
 float batt_v = 50.0;
 float batt_factor = 1.0;
@@ -158,7 +158,7 @@ void update_pedal_rpm(float lpf_constant)
 	static float inactivity_time = 0;
 
 	const float timestamp = (float) chVTGetSystemTime() / CH_CFG_ST_FREQUENCY;
-	uint16_t count = hw_get_pedal_encoder_count();
+	int16_t count = hw_get_pedal_encoder_count();
 	if( count == pedal_encoder_count )
 	{
 		inactivity_time += 1.0 / config.update_rate_hz;
@@ -176,7 +176,7 @@ void update_pedal_rpm(float lpf_constant)
 		pedal_encoder_count = count;
 		old_timestamp = timestamp;
 		
-		UTILS_LP_FAST(pedal_rpm, rpm, lpf_constant);
+		UTILS_LP_FAST(pedal_rpm, MAX(0.0, rpm), lpf_constant); // don't go negative
 		inactivity_time = 0.0;
 	}
 }
@@ -256,7 +256,8 @@ static THD_FUNCTION(pas_thread, arg) {
 			{
 				pedal_torque = hw_get_pedal_torque();
 				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
-				output = utils_throttle_curve(pedal_torque_filter, -3.0, 0.0, 2) * config.current_scaling * sub_scaling;
+				float rider_watt_factor = MIN(1.0, pedal_rpm / config.pedal_rpm_end) * pedal_torque_filter;
+				output = rider_watt_factor * config.current_scaling * sub_scaling;
 				const float batt_v_min = 39;
 				const float batt_v_max = 54.34;
 				batt_v = mc_interface_input_voltage_filtered();
