@@ -109,7 +109,7 @@ void app_pas_start(bool is_primary_output) {
 	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
-		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-pedCnt, 7-pedRpm] [Sample Count]",
+		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-pedCnt, 7-pedRpm, 8-shutdnV] [Sample Count]",
 		terminal_sample);
 	terminal_register_command_callback(
 		"pas_plot",
@@ -189,7 +189,7 @@ static THD_FUNCTION(pas_thread, arg) {
 	hw_setup_pedal_encoder();
 
 	float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
-	float lpf_hz = 2;
+	float lpf_hz = 0.8;
 	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
 	float lpf_constant = dt / (dt + rc);
 
@@ -229,6 +229,8 @@ static THD_FUNCTION(pas_thread, arg) {
 		if (app_is_output_disabled()) {
 			continue;
 		}
+		
+		float combined_scaling = config.current_scaling * sub_scaling;
 
 		switch (config.ctrl_type) {
 			case PAS_CTRL_TYPE_NONE:
@@ -240,11 +242,11 @@ static THD_FUNCTION(pas_thread, arg) {
 				// NOTE: If the limits are the same a numerical instability is approached, so in that case
 				// just use on/off control (which is what setting the limits to the same value essentially means).
 				if (config.pedal_rpm_end > (config.pedal_rpm_start + 1.0)) {
-					output = utils_map(pedal_rpm, config.pedal_rpm_start, config.pedal_rpm_end, 0.0, config.current_scaling * sub_scaling);
-					utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+					output = utils_map(pedal_rpm, config.pedal_rpm_start, config.pedal_rpm_end, 0.0, combined_scaling);
+					utils_truncate_number(&output, 0.0, combined_scaling);
 				} else {
 					if (pedal_rpm > config.pedal_rpm_end) {
-						output = config.current_scaling * sub_scaling;
+						output = combined_scaling;
 					} else {
 						output = 0.0;
 					}
@@ -256,15 +258,14 @@ static THD_FUNCTION(pas_thread, arg) {
 			{
 				pedal_torque = hw_get_pedal_torque();
 				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
-				float rider_watt_factor = MIN(1.0, pedal_rpm / config.pedal_rpm_end) * pedal_torque_filter;
-				output = rider_watt_factor * config.current_scaling * sub_scaling;
+				output = pedal_torque_filter * combined_scaling;
 				const float batt_v_min = 39;
 				const float batt_v_max = 54.34;
 				batt_v = mc_interface_input_voltage_filtered();
 				batt_factor = batt_v_max / batt_v;
 				utils_truncate_number(&batt_factor, 1.0, batt_v_max / batt_v_min );
 				output *= batt_factor; // PAS output adjusted for Battery SOC%
-				utils_truncate_number(&output, 0.0, config.current_scaling * sub_scaling);
+				utils_truncate_number(&output, 0.0, combined_scaling);
 			}
 			/* fall through */
 			case PAS_CTRL_TYPE_TORQUE_WITH_CADENCE_TIMEOUT:
@@ -289,12 +290,12 @@ static THD_FUNCTION(pas_thread, arg) {
 		// Apply ramping
 		static systime_t last_time = 0;
 		static float output_ramp = 0.0;
-		float ramp_time = fabsf(output) > fabsf(output_ramp) ? config.ramp_time_pos : config.ramp_time_neg;
+		float ramp_time = fabsf(output) > fabsf(output_ramp) ? config.ramp_time_pos : 0.5; // override negative
 
 		if (ramp_time > 0.01) {
-			const float ramp_step = (float)ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0);
+			const float ramp_step = (float) ST2MS(chVTTimeElapsedSinceX(last_time)) / (ramp_time * 1000.0); // 0.5s = 2 / 500 = 0.004
 			utils_step_towards(&output_ramp, output, ramp_step);
-			utils_truncate_number(&output_ramp, 0.0, config.current_scaling * sub_scaling);
+			utils_truncate_number(&output_ramp, 0.0, combined_scaling);
 
 			last_time = chVTGetSystemTime();
 			output = output_ramp;
@@ -401,6 +402,8 @@ static float debug_get_field(int index) {
 			return pedal_encoder_count;
 		case(7):
 			return pedal_rpm;
+		case(8):
+			return hw_luna_m600_shutdown_button_value();
 
 		default:
 			return 0;
