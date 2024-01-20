@@ -21,7 +21,7 @@
 #ifndef HW_LUNA_M600_H_
 #define HW_LUNA_M600_H_
 
-#define FW_NAME					"2024.01.01 MoreDH"
+#define FW_NAME					"2024.01.19 MoreDH"
 
 #include "mcconf_luna_m600.h"
 #include "appconf_luna_m600.h"
@@ -337,7 +337,7 @@
 #define HW_LIM_TEMP_FET			-40.0, 95.0
 
 #define HW_GATE_DRIVER_SUPPLY_MIN_VOLTAGE	11.0
-#define HW_GATE_DRIVER_SUPPLY_MAX_VOLTAGE	13.6
+#define HW_GATE_DRIVER_SUPPLY_MAX_VOLTAGE	17.6
 
 // HW-specific functions
 void hw_update_speed_sensor(void);

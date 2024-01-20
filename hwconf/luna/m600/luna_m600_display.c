@@ -54,16 +54,6 @@ typedef enum {
 } LUNA_PAS_LEVEL;
 
 typedef enum {
-	WRITE_LOW_BATTERY_ERROR = 0x00,
-	WRITE_MAX_CURRENT_ERROR = 0x01,
-	WRITE_ASSIST_LEVEL_ERROR = 0x02,
-	WRITE_ASSIST_SPEED_ERROR = 0x0C,
-	WRITE_SPEEDOMETER_ERROR = 0x16,
-	WRITE_SPEEDOMETER_SIGNAL_ERROR = 0x17,
-	WRITE_BASIC_SUCCESS = 0x18
-} CMD_WRITE_BASIC_RESPONSE;
-
-typedef enum {
 	LUNA_DISPLAY_ID1 = 0x03106300,
 	LUNA_TORQUE_SENSOR_ID = 0x01F83100,
 } LUNA_CAN_IDs;
@@ -236,19 +226,27 @@ static bool check_assist_level(uint8_t assist_code) {
 static void set_assist_level(uint8_t assist_code) {
 	float current_scale;
 	volatile mc_configuration *mcconf = (volatile mc_configuration*) mc_interface_get_configuration();
-
+	
 	luna_settings.assist_code = assist_code;
 
+	// DPC245 has the following mapping
+	// W	PAS_LEVEL_WALK
+	// 0	PAS_LEVEL_0
+	// E	PAS_LEVEL_2
+	// T	PAS_LEVEL_4
+	// S	PAS_LEVEL_6
+	// S+	PAS_LEVEL_8
+	// B	PAS_LEVEL_9
 	switch (assist_code) {
 		case PAS_LEVEL_0: 		current_scale = 0.0; break;
 		case PAS_LEVEL_1: 		current_scale = 1.0 / 9.0; break;
 		case PAS_LEVEL_2: 		current_scale = 2.0 / 9.0; break;
-		case PAS_LEVEL_3: 		current_scale = 3.0 / 9.0; break;
-		case PAS_LEVEL_4: 		current_scale = 4.0 / 9.0; break;
-		case PAS_LEVEL_5: 		current_scale = 5.0 / 9.0; break;
-		case PAS_LEVEL_6: 		current_scale = 6.0 / 9.0; break;
-		case PAS_LEVEL_7: 		current_scale = 7.0 / 9.0; break;
-		case PAS_LEVEL_8: 		current_scale = 8.0 / 9.0; break;
+		case PAS_LEVEL_3: 		current_scale = 2.5 / 9.0; break;
+		case PAS_LEVEL_4: 		current_scale = 3.0 / 9.0; break;
+		case PAS_LEVEL_5: 		current_scale = 3.5 / 9.0; break;
+		case PAS_LEVEL_6: 		current_scale = 4.0 / 9.0; break;
+		case PAS_LEVEL_7: 		current_scale = 5.0 / 9.0; break;
+		case PAS_LEVEL_8: 		current_scale = 6.0 / 9.0; break;
 		case PAS_LEVEL_9: 		current_scale = 1.0; break;
 		case PAS_LEVEL_WALK:	current_scale = 1.0; break;
 		default: return;
@@ -299,7 +297,7 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 		float uptime = (float)chVTGetSystemTimeX() / (float)CH_CFG_ST_FREQUENCY;
 		if( delay_between_torque_sensor_message > 500 && uptime > 3.0 ){
 			delay_between_torque_sensor_message = 0;
-			//luna_settings.error_code = LUNA_ERROR_TORQUE_SENSOR;
+			luna_settings.error_code = LUNA_ERROR_TORQUE_SENSOR;
 		}
 	}
 
@@ -436,20 +434,23 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			//float speed_km_h = (uint16_t)(wheel_rpm * wheelsize_in_meters * 60.0 / 1000.0);
 
 			//uint16_t speed_display = (uint16_t)(speed_km_h * 100.0);//the display needs [km_h * 100]
-			uint16_t speed_display = (uint16_t)(mc_interface_get_speed() * 3600.0 / 1000.0 * 100.0 );	//the display needs [km_h * 100]
+			uint16_t speed_display = (uint16_t) (mc_interface_get_speed() * 3600.0 / 1000.0 * 100.0);	//the display needs [km_h * 100]
 
-			can_tx_buffer[0] = (uint8_t)(speed_display & 0x00ff);
-			can_tx_buffer[1] = (uint8_t)((speed_display >> 8 ) & 0x00ff);
+			can_tx_buffer[0] = (uint8_t) (speed_display & 0x00ff);
+			can_tx_buffer[1] = (uint8_t) ((speed_display >> 8 ) & 0x00ff);
 #endif
 			float current = mc_interface_get_tot_current_in_filtered();
-			uint16_t current_display = (uint16_t)(current * 100.0);
+			uint16_t current_display = (uint16_t) (current * 100.0);
+			current = hw_get_pedal_torque(); // use pedal torque for DPC245 right bar
+			current_display = (uint16_t) (current * 1000.0);
+			
 			float voltage = mc_interface_get_input_voltage_filtered();
 			uint16_t voltage_display = voltage * 100;
 
-			can_tx_buffer[2] = (uint8_t)(current_display & 0x00ff);
-			can_tx_buffer[3] = (uint8_t)((current_display >> 8 ) & 0x00ff);
-			can_tx_buffer[4] = (uint8_t)(voltage_display & 0x00ff);
-			can_tx_buffer[5] = (uint8_t)((voltage_display >> 8 ) & 0x00ff);
+			can_tx_buffer[2] = (uint8_t) (current_display & 0x00ff);
+			can_tx_buffer[3] = (uint8_t) ((current_display >> 8 ) & 0x00ff);
+			can_tx_buffer[4] = (uint8_t) (voltage_display & 0x00ff);
+			can_tx_buffer[5] = (uint8_t) ((voltage_display >> 8 ) & 0x00ff);
 			can_tx_buffer[6] = (uint8_t) (mc_interface_temp_fet_filtered() - 40.0);		// 10°C = 10+40=50(32Hex) = 32
 			can_tx_buffer[7] = (uint8_t) (mc_interface_temp_motor_filtered() - 40.0);	// 20°C = 20+40=60(3CHex) = 3C
 			comm_can_transmit_eid(0x02F83201, can_tx_buffer, 8);
@@ -473,10 +474,10 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 				wheelsize_display = 437; //27.5"
 			}
 
-			can_tx_buffer[0] = (uint8_t)(speed_limit_display & 0x00ff);
-			can_tx_buffer[1] = (uint8_t)((speed_limit_display >> 8 ) & 0x00ff);
-			can_tx_buffer[2] = (uint8_t)(wheelsize_display & 0x00ff);
-			can_tx_buffer[3] = (uint8_t)((wheelsize_display >> 8 ) & 0x00ff);
+			can_tx_buffer[0] = (uint8_t) (speed_limit_display & 0x00ff);
+			can_tx_buffer[1] = (uint8_t) ((speed_limit_display >> 8) & 0x00ff);
+			can_tx_buffer[2] = (uint8_t) (wheelsize_display & 0x00ff);
+			can_tx_buffer[3] = (uint8_t) ((wheelsize_display >> 8) & 0x00ff);
 			can_tx_buffer[4] = 182;
 			can_tx_buffer[5] = 8;
 			comm_can_transmit_eid(0x02F83203, can_tx_buffer, 6);
@@ -490,7 +491,7 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			break;
 		}
 		case STATE_FAULTS:{
-			can_tx_buffer[0] = luna_settings.error_code ;
+			can_tx_buffer[0] = luna_settings.error_code;
 			comm_can_transmit_eid(0x02FF1200, can_tx_buffer, 1);
 			break;
 		}

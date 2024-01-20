@@ -44,7 +44,7 @@ static THD_WORKING_AREA(pas_thread_wa, 512);
 
 // Private variables
 static volatile pas_config config;
-static volatile float sub_scaling = 1;
+static volatile float sub_scaling = 1; // only used if throttle fixed at max
 static volatile float output_current_rel = 0;
 static volatile float ms_without_power = 0;
 static volatile float max_pulse_period = 0;
@@ -69,6 +69,7 @@ static int debug_sample_field, debug_sample_count, debug_sample_index;
 static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_experiment_4, debug_experiment_5, debug_experiment_6;
 
 // Function Prototypes
+static void terminal_info(int argc, const char **argv);
 static void terminal_sample(int argc, const char **argv);
 static void terminal_experiment(int argc, const char **argv);
 static float debug_get_field(int index);
@@ -106,6 +107,10 @@ void app_pas_start(bool is_primary_output) {
 	stop_now = false;
 
 	// Register terminal commands
+	terminal_register_command_callback(
+		"pas_info",
+		"Output current PAS data values to the terminal", "",
+		terminal_info);
 	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
@@ -212,6 +217,8 @@ static THD_FUNCTION(pas_thread, arg) {
 
 		thread_t0 = chVTGetSystemTime();
 
+		pedal_torque = hw_get_pedal_torque();
+		UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
 		update_pedal_rpm(lpf_constant);
 
 		// Debug outputs
@@ -256,8 +263,6 @@ static THD_FUNCTION(pas_thread, arg) {
 #ifdef HW_HAS_PAS_TORQUE_SENSOR
 			case PAS_CTRL_TYPE_TORQUE:
 			{
-				pedal_torque = hw_get_pedal_torque();
-				UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
 				output = pedal_torque_filter * combined_scaling;
 				const float batt_v_min = 39;
 				const float batt_v_max = 54.34;
@@ -331,6 +336,10 @@ static THD_FUNCTION(pas_thread, arg) {
 }
 
 // Terminal commands
+static void terminal_info(int argc, const char **argv) {
+	commands_printf("PAS LEVEL %d", luna_canbus_get_pas_level());
+}
+
 static void terminal_sample(int argc, const char **argv) {
 	if (argc == 3) {
 		debug_sample_field = 0;
