@@ -56,12 +56,16 @@ typedef enum {
 typedef enum {
 	LUNA_HMI_LEVEL_ID = 0x03106300,
 	LUNA_TORQUE_SENSOR_ID = 0x01F83100,
-	LUNA_HMI_RQST_HW_LEN_ID = 0x13116000,
-	LUNA_HMI_RQST_HW_DATA_ID = 0x13126000,
-	LUNA_HMI_RQST_SW_LEN_ID = 0x13116001,
-	LUNA_HMI_RQST_SW_DATA_ID = 0x13126001,
-	LUNA_HMI_RQST_SN_LEN_ID = 0x13116003,
-	LUNA_HMI_RQST_SN_DATA_ID = 0x13126003,
+	LUNA_HMI_RQST_HW_LEN_ID = 0x03116000,
+	LUNA_HMI_RQST_HW_DATA_ID = 0x03126000,
+	LUNA_HMI_RQST_SW_LEN_ID = 0x03116001,
+	LUNA_HMI_RQST_SW_DATA_ID = 0x03126001,
+	LUNA_APP_RQST_HW_LEN_ID = 0x13116000,
+	LUNA_APP_RQST_HW_DATA_ID = 0x13126000,
+	LUNA_APP_RQST_SW_LEN_ID = 0x13116001,
+	LUNA_APP_RQST_SW_DATA_ID = 0x13126001,
+	LUNA_APP_RQST_SN_LEN_ID = 0x13116003,
+	LUNA_APP_RQST_SN_DATA_ID = 0x13126003,
 } LUNA_CAN_IDs;
 
 typedef enum {
@@ -506,12 +510,39 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 	}
 }
 
+static int can_strlen(uint32_t fid, const char * str)
+{
+	int len = MIN(strlen(str), 24);
+	
+	uint8_t tx_data[1];
+	tx_data[0] = len;
+	comm_can_transmit_eid(fid, tx_data, 1);
+	
+	return len;
+}
+
+static void can_str2frames(const char * str, int length, uint32_t fid_data, uint32_t fid_data_last)
+{
+	const int MAX_FRAME_BYTES = 8;
+	int frames = (length + MAX_FRAME_BYTES - 1) / MAX_FRAME_BYTES; // integer round up
+	for(int i_frame=0; i_frame<frames; ++i_frame)
+	{
+		uint8_t data[8];
+		int frame_length = MIN(length - i_frame * 8, 8);
+		bool last_frame = (i_frame + 1) == frames;
+		memcpy(data, &str[i_frame * 8], frame_length);
+		uint32_t fid = (last_frame ? fid_data_last : fid_data) + i_frame;
+		comm_can_transmit_eid(fid, data, frame_length);
+	}
+}
+
 static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 	static int tx_length = 0;
 	bool used_data = false;
 	LUNA_CAN_IDs cmd_id = id;
+	const char * SN = "0000";
 
-	switch(cmd_id){
+	switch( cmd_id ){
 		case LUNA_HMI_LEVEL_ID:{
 			if( len == LUNA_HMI_LEVEL_ID_BYTES){
 				if( data != NULL ){
@@ -544,71 +575,61 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 		}
 		case LUNA_HMI_RQST_HW_LEN_ID:{
 			if( len == 0 ){
-				tx_length = 7;
-				uint8_t tx_data[1];
-				tx_data[0] = tx_length;
-				comm_can_transmit_eid(0x029C6000, tx_data, 1);
+				tx_length = can_strlen(0x021C6000, HW_NAME);
 			}
 			break;
 		}
 		case LUNA_HMI_RQST_HW_DATA_ID:{
 			if( len == 0 && tx_length > 0 ){
-				uint8_t tx_data[8];
-				tx_data[0] = 'T';
-				tx_data[1] = 'E';
-				tx_data[2] = 'S';
-				tx_data[3] = 'T';
-				tx_data[4] = ' ';
-				tx_data[5] = 'H';
-				tx_data[6] = 'W';
-				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+				can_str2frames(HW_NAME, tx_length, 0x021D0000, 0x021E0000);
 			}
 			break;
 		}
 		case LUNA_HMI_RQST_SW_LEN_ID:{
 			if( len == 0 ){
-				tx_length = 7;
-				uint8_t tx_data[1];
-				tx_data[0] = tx_length;
-				comm_can_transmit_eid(0x029C6001, tx_data, 1);
+				tx_length = can_strlen(0x021C6001, FW_NAME);
 			}
 			break;
 		}
 		case LUNA_HMI_RQST_SW_DATA_ID:{
 			if( len == 0 && tx_length > 0 ){
-				uint8_t tx_data[8];
-				tx_data[0] = 'T';
-				tx_data[1] = 'E';
-				tx_data[2] = 'S';
-				tx_data[3] = 'T';
-				tx_data[4] = ' ';
-				tx_data[5] = 'S';
-				tx_data[6] = 'W';
-				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+				can_str2frames(FW_NAME, tx_length, 0x021D0000, 0x021E0000);
 			}
 			break;
 		}
-		case LUNA_HMI_RQST_SN_LEN_ID:{
+		case LUNA_APP_RQST_HW_LEN_ID:{
 			if( len == 0 ){
-				tx_length = 8;
-				uint8_t tx_data[1];
-				tx_data[0] = tx_length;
-				comm_can_transmit_eid(0x029C6003, tx_data, 1);
+				tx_length = can_strlen(0x029C6000, HW_NAME);
 			}
 			break;
 		}
-		case LUNA_HMI_RQST_SN_DATA_ID:{
+		case LUNA_APP_RQST_HW_DATA_ID:{
 			if( len == 0 && tx_length > 0 ){
-				uint8_t tx_data[8];
-				tx_data[0] = '0';
-				tx_data[1] = '0';
-				tx_data[2] = '0';
-				tx_data[3] = '0';
-				tx_data[4] = '0';
-				tx_data[5] = '0';
-				tx_data[6] = '0';
-				tx_data[7] = '1';
-				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+				can_str2frames(HW_NAME, tx_length, 0x029D0000, 0x029E0000);
+			}
+			break;
+		}
+		case LUNA_APP_RQST_SW_LEN_ID:{
+			if( len == 0 ){
+				tx_length = can_strlen(0x029C6001, FW_NAME);
+			}
+			break;
+		}
+		case LUNA_APP_RQST_SW_DATA_ID:{
+			if( len == 0 && tx_length > 0 ){
+				can_str2frames(FW_NAME, tx_length, 0x029D0000, 0x029E0000);
+			}
+			break;
+		}
+		case LUNA_APP_RQST_SN_LEN_ID:{
+			if( len == 0 ){
+				tx_length = can_strlen(0x029C6003, SN);
+			}
+			break;
+		}
+		case LUNA_APP_RQST_SN_DATA_ID:{
+			if( len == 0 && tx_length > 0 ){
+				can_str2frames(SN, tx_length, 0x029D0000, 0x029E0000);
 			}
 			break;
 		}
