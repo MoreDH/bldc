@@ -54,14 +54,20 @@ typedef enum {
 } LUNA_PAS_LEVEL;
 
 typedef enum {
-	LUNA_DISPLAY_ID1 = 0x03106300,
+	LUNA_HMI_LEVEL_ID = 0x03106300,
 	LUNA_TORQUE_SENSOR_ID = 0x01F83100,
+	LUNA_HMI_RQST_HW_LEN_ID = 0x13116000,
+	LUNA_HMI_RQST_HW_DATA_ID = 0x13126000,
+	LUNA_HMI_RQST_SW_LEN_ID = 0x13116001,
+	LUNA_HMI_RQST_SW_DATA_ID = 0x13126001,
+	LUNA_HMI_RQST_SN_LEN_ID = 0x13116003,
+	LUNA_HMI_RQST_SN_DATA_ID = 0x13126003,
 } LUNA_CAN_IDs;
 
 typedef enum {
-	LUNA_DISPLAY_ID1_LENGTH_BYTES = 4,
-	LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES = 4,
-} LUNA_CAN_IDs_LENGTH_BYTES;
+	LUNA_HMI_LEVEL_ID_BYTES = 4,
+	LUNA_TORQUE_SENSOR_ID_BYTES = 4,
+} LUNA_CAN_IDs_BYTES;
 
 typedef enum {
 	LUNA_LIGHT_MODE_OFF = 0,
@@ -422,8 +428,10 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			can_tx_buffer[0] = (uint8_t) battery_level;
 			can_tx_buffer[1] = (uint8_t)(distance_display & 0x00ff);
 			//TODO: support RANGE parameter. 0x1FF = 511 sets RANGE as 5.11 km or 3 miles.
-			//can_tx_buffer[6] = RANGE LSB
-			//can_tx_buffer[7] = RANGE MSB
+			float range = 57.92; // 57.92 km = 35.99 mi
+			uint16_t range_display = (uint16_t) (range * 100);
+			can_tx_buffer[6] = (uint8_t) (range_display & 0x00);
+			can_tx_buffer[7] = (uint8_t) ((range_display >> 8 ) & 0x00ff);
 			comm_can_transmit_eid(0x02F83200, can_tx_buffer, 8);
 			break;
 		}
@@ -499,21 +507,22 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 }
 
 static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
+	static int tx_length = 0;
 	bool used_data = false;
 	LUNA_CAN_IDs cmd_id = id;
 
 	switch(cmd_id){
-		case LUNA_DISPLAY_ID1:{
-			if(len == LUNA_DISPLAY_ID1_LENGTH_BYTES){
-				if(data != NULL){
+		case LUNA_HMI_LEVEL_ID:{
+			if( len == LUNA_HMI_LEVEL_ID_BYTES){
+				if( data != NULL ){
 					used_data = true;
 
-					if(check_assist_level(data[1])){
+					if( check_assist_level(data[1]) ){
 						luna_settings.pas_level = data[1];
 						set_assist_level(luna_settings.pas_level);
 					}
 
-					if(check_light_mode(data[2])){
+					if( check_light_mode(data[2]) ){
 						luna_settings.light_mode = data[2];
 					}
 				}
@@ -521,8 +530,8 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 			break;
 		}
 		case LUNA_TORQUE_SENSOR_ID:{
-			if(len == LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES){
-				if(data != NULL){
+			if( len == LUNA_TORQUE_SENSOR_ID_BYTES ){
+				if( data != NULL ){
 					used_data = true;
 					luna_settings.torque_sensor_is_active = true;
 					uint16_t torque_raw = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0] & 0x00ff);
@@ -533,7 +542,78 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 			}
 			break;
 		}
+		case LUNA_HMI_RQST_HW_LEN_ID:{
+			if( len == 0 ){
+				tx_length = 7;
+				uint8_t tx_data[1];
+				tx_data[0] = tx_length;
+				comm_can_transmit_eid(0x029C6000, tx_data, 1);
+			}
+			break;
+		}
+		case LUNA_HMI_RQST_HW_DATA_ID:{
+			if( len == 0 && tx_length > 0 ){
+				uint8_t tx_data[8];
+				tx_data[0] = 'T';
+				tx_data[1] = 'E';
+				tx_data[2] = 'S';
+				tx_data[3] = 'T';
+				tx_data[4] = ' ';
+				tx_data[5] = 'H';
+				tx_data[6] = 'W';
+				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+			}
+			break;
+		}
+		case LUNA_HMI_RQST_SW_LEN_ID:{
+			if( len == 0 ){
+				tx_length = 7;
+				uint8_t tx_data[1];
+				tx_data[0] = tx_length;
+				comm_can_transmit_eid(0x029C6001, tx_data, 1);
+			}
+			break;
+		}
+		case LUNA_HMI_RQST_SW_DATA_ID:{
+			if( len == 0 && tx_length > 0 ){
+				uint8_t tx_data[8];
+				tx_data[0] = 'T';
+				tx_data[1] = 'E';
+				tx_data[2] = 'S';
+				tx_data[3] = 'T';
+				tx_data[4] = ' ';
+				tx_data[5] = 'S';
+				tx_data[6] = 'W';
+				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+			}
+			break;
+		}
+		case LUNA_HMI_RQST_SN_LEN_ID:{
+			if( len == 0 ){
+				tx_length = 8;
+				uint8_t tx_data[1];
+				tx_data[0] = tx_length;
+				comm_can_transmit_eid(0x029C6003, tx_data, 1);
+			}
+			break;
+		}
+		case LUNA_HMI_RQST_SN_DATA_ID:{
+			if( len == 0 && tx_length > 0 ){
+				uint8_t tx_data[8];
+				tx_data[0] = '0';
+				tx_data[1] = '0';
+				tx_data[2] = '0';
+				tx_data[3] = '0';
+				tx_data[4] = '0';
+				tx_data[5] = '0';
+				tx_data[6] = '0';
+				tx_data[7] = '1';
+				comm_can_transmit_eid(0x029E0000, tx_data, tx_length);
+			}
+			break;
+		}
 	}
+
 	return used_data;
 }
 
