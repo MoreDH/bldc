@@ -21,7 +21,7 @@
 #ifndef HW_LUNA_M600_H_
 #define HW_LUNA_M600_H_
 
-#define FW_NAME					"2024.01.21 MoreDH"
+#define FW_NAME					"2024.03.24 MoreDH"
 
 #include "mcconf_luna_m600.h"
 #include "appconf_luna_m600.h"

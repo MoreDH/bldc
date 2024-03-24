@@ -160,16 +160,6 @@ float luna_get_pedal_torque(void){
 }
 
 /**
- * Get the current Pedal Assist level
- *
- * @return
- * Assist level from 0 (min) to 9 (max power). 
- */
-LUNA_PAS_LEVEL luna_canbus_get_pas_level(void){
-	return luna_settings.pas_level;
-}
-
-/**
  * checks if the light mode is valid
  *
  * @param light_mode
@@ -242,25 +232,26 @@ static void set_assist_level(uint8_t assist_code) {
 	// DPC245 has the following mapping
 	// W	PAS_LEVEL_WALK
 	// 0	PAS_LEVEL_0
-	// E	PAS_LEVEL_2
-	// T	PAS_LEVEL_4
-	// S	PAS_LEVEL_6
-	// S+	PAS_LEVEL_8
-	// B	PAS_LEVEL_9
+	// E	PAS_LEVEL_2		2.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// T	PAS_LEVEL_4		3.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// S	PAS_LEVEL_6		4.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// S+	PAS_LEVEL_8		6.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// B	PAS_LEVEL_9		9.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
 	switch (assist_code) {
 		case PAS_LEVEL_0: 		current_scale = 0.0; break;
 		case PAS_LEVEL_1: 		current_scale = 1.0 / 9.0; break;
 		case PAS_LEVEL_2: 		current_scale = 2.0 / 9.0; break;
 		case PAS_LEVEL_3: 		current_scale = 2.5 / 9.0; break;
-		case PAS_LEVEL_4: 		current_scale = 3.0 / 9.0; break;
+		case PAS_LEVEL_4: 		current_scale = 2.5 / 9.0; break;
 		case PAS_LEVEL_5: 		current_scale = 3.5 / 9.0; break;
-		case PAS_LEVEL_6: 		current_scale = 4.0 / 9.0; break;
+		case PAS_LEVEL_6: 		current_scale = 3.0 / 9.0; break;
 		case PAS_LEVEL_7: 		current_scale = 5.0 / 9.0; break;
 		case PAS_LEVEL_8: 		current_scale = 6.0 / 9.0; break;
 		case PAS_LEVEL_9: 		current_scale = 1.0; break;
 		case PAS_LEVEL_WALK:	current_scale = 1.0; break;
 		default: return;
 	}
+
 
 	if( hw_m600_has_fixed_throttle_level() ) {
 		mcconf->l_current_max_scale = 1.0;
@@ -554,7 +545,11 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 					}
 
 					if( check_light_mode(data[2]) ){
-						luna_settings.light_mode = data[2];
+						if( luna_settings.light_mode != data[2] ) // value changing
+						{
+							luna_settings.light_mode = data[2];
+							app_pas_set_lpf(luna_settings.light_mode == LUNA_LIGHT_MODE_ON ? 0.8 : 0.65);
+						}
 					}
 				}
 			}

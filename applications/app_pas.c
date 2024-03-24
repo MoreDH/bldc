@@ -54,6 +54,7 @@ static volatile float pedal_rpm = 0;
 static volatile bool primary_output = false;
 static volatile bool stop_now = true;
 static volatile bool is_running = false;
+float lpf_constant = 1.0;
 float pedal_torque;
 float pedal_torque_filter;
 float output = 0;
@@ -69,7 +70,6 @@ static int debug_sample_field, debug_sample_count, debug_sample_index;
 static int debug_experiment_1, debug_experiment_2, debug_experiment_3, debug_experiment_4, debug_experiment_5, debug_experiment_6;
 
 // Function Prototypes
-static void terminal_info(int argc, const char **argv);
 static void terminal_sample(int argc, const char **argv);
 static void terminal_experiment(int argc, const char **argv);
 static float debug_get_field(int index);
@@ -108,10 +108,6 @@ void app_pas_start(bool is_primary_output) {
 
 	// Register terminal commands
 	terminal_register_command_callback(
-		"pas_info",
-		"Output current PAS data values to the terminal", "",
-		terminal_info);
-	terminal_register_command_callback(
 		"pas_sample",
 		"Output real time values to the terminal",
 		"[Field Number: 1-pedTrq, 2-pedTrqFlt, 3-output, 4-battV, 5-battFact, 6-pedCnt, 7-pedRpm, 8-shutdnV] [Sample Count]",
@@ -145,6 +141,13 @@ void app_pas_stop(void) {
 	}
 }
 
+void app_pas_set_lpf(float lpf_hz)
+{
+	float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	lpf_constant = dt / (dt + rc);
+}
+
 void app_pas_set_current_sub_scaling(float current_sub_scaling) {
 	sub_scaling = current_sub_scaling;
 }
@@ -157,7 +160,7 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 
-void update_pedal_rpm(float lpf_constant)
+void update_pedal_rpm(float lpf_const)
 {
 	static float old_timestamp = 0;
 	static float inactivity_time = 0;
@@ -181,7 +184,7 @@ void update_pedal_rpm(float lpf_constant)
 		pedal_encoder_count = count;
 		old_timestamp = timestamp;
 		
-		UTILS_LP_FAST(pedal_rpm, MAX(0.0, rpm), lpf_constant); // don't go negative
+		UTILS_LP_FAST(pedal_rpm, MAX(0.0, rpm), lpf_const); // don't go negative
 		inactivity_time = 0.0;
 	}
 }
@@ -192,12 +195,8 @@ static THD_FUNCTION(pas_thread, arg) {
 	chRegSetThreadName("APP_PAS");
 
 	hw_setup_pedal_encoder();
-
-	float dt = 1.0 / config.update_rate_hz; // update_rate_hz is int
-	float lpf_hz = 0.8;
-	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
-	float lpf_constant = dt / (dt + rc);
-
+	app_pas_set_lpf(0.65);
+	
 	is_running = true;
 
 	int iSample = 0;
@@ -336,10 +335,6 @@ static THD_FUNCTION(pas_thread, arg) {
 }
 
 // Terminal commands
-static void terminal_info(int argc, const char **argv) {
-	commands_printf("PAS LEVEL %d", luna_canbus_get_pas_level());
-}
-
 static void terminal_sample(int argc, const char **argv) {
 	if (argc == 3) {
 		debug_sample_field = 0;
