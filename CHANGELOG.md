@@ -1,27 +1,25 @@
 ### 6.02
+#### 2024.05.19 MoreDH
+* Cadence display now shows cadence.
+* Range display now shows rider to motor wh ratio in percent.
+* kcal display now shows motor Wh.
+
+---
+
+### 6.02
 #### 2024.03.24 MoreDH
-* Battery SOC% is now mapped from 4.18 to 3.0V.
-* PAS pedal timeout 5 -> 2.5s.
-* More consistent PAS loop times.
 * Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.4/0.3s, no field weakening, motor retune.
-* PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.
 * Tuned pedal torque low pass filter to 0.65 hz (0.8 hz with lights on).
-* New CAN communication scheme to be more like original controller (attempt to minimize ERROR 30).
-* PAS output adjusted for Battery SOC%.
-* Forced PAS neg ramp time to 0.5s.
 * PAS mode setup for 5 level DPC245 E/T/S/S+/B (2/9, 3/9, 4/9, 6/9, 9/9)
+* HW_GATE_DRIVER_SUPPLY_MAX_VOLTAGE 17.6 to allow for DPC245 display
+* current display (bar on right) now shows rider torque.
 
 ---
 
 ### 6.02
 #### 2024.01.01 MoreDH
-* Battery SOC% is now mapped from 4.18 to 3.0V.
-* PAS pedal timeout 5 -> 2.5s.
-* More consistent PAS loop times.
 * Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.4/0.3s, no field weakening.
-* PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.
 * Tuned pedal torque low pass filter to 0.8 hz.
-* New CAN communication scheme to be more like original controller (attempt to minimize ERROR 30).
 * PAS output adjusted for Battery SOC%.
 * Forced PAS neg ramp time to 0.5s.
 
@@ -29,23 +27,14 @@
 
 ### 6.02
 #### 2023.09.15 MoreDH
-* Battery SOC% is now mapped from 4.18 to 3.0V.
-* PAS pedal timeout 5 -> 2.5s.
-* More consistent PAS loop times.
 * PAS pedal torque to motor output is progressive (-3.0/poly).
-* Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.4/0.3s, no field weakening.
-* PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.
 * Tuned pedal torque low pass filter to 70 rpm cadence.
-* New CAN communication scheme to be more like original controller (attempt to minimize ERROR 30).
 * PAS output adjusted for Battery SOC%
 
 ---
 
 ### 6.02
 #### 2023.04.23 MoreDH
-* Battery SOC% is now mapped from 4.18 to 3.0V.
-* PAS pedal timeout 5 -> 2.5s.
-* More consistent PAS loop times.
 * PAS pedal torque to motor output is progressive (-3.5/poly).
 * Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.4/0.3s, no field weakening.
 * PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.

@@ -422,11 +422,14 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 
 			can_tx_buffer[0] = (uint8_t) battery_level;
 			can_tx_buffer[1] = (uint8_t)(distance_display & 0x00ff);
+			can_tx_buffer[3] = (uint8_t) app_pas_get_pedal_rpm(); // cadence
 			//TODO: support RANGE parameter. 0x1FF = 511 sets RANGE as 5.11 km or 3 miles.
-			float range = 57.92; // 57.92 km = 35.99 mi
-			uint16_t range_display = (uint16_t) (range * 100);
-			can_tx_buffer[6] = (uint8_t) (range_display & 0x00);
-			can_tx_buffer[7] = (uint8_t) ((range_display >> 8 ) & 0x00ff);
+			float rider_wh = app_pas_get_rider_wh();
+			float motor_wh = mc_interface_get_watt_hours(false);
+			float rider_motor_percent = motor_wh > 0.0001 ? rider_wh / motor_wh * 100.0 : 0.0; // in percent
+			uint16_t rider_motor_percent_display = rider_motor_percent * 1.609344 * 100.0; // convert to km because it will display in miles
+			can_tx_buffer[6] = (uint8_t) (rider_motor_percent_display & 0x00);
+			can_tx_buffer[7] = (uint8_t) ((rider_motor_percent_display >> 8 ) & 0x00ff);
 			comm_can_transmit_eid(0x02F83200, can_tx_buffer, 8);
 			break;
 		}
@@ -476,13 +479,13 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			} else {
 				wheelsize_display = 437; //27.5"
 			}
-
+			uint16_t circumference_display = 2250; // mm
 			can_tx_buffer[0] = (uint8_t) (speed_limit_display & 0x00ff);
 			can_tx_buffer[1] = (uint8_t) ((speed_limit_display >> 8) & 0x00ff);
 			can_tx_buffer[2] = (uint8_t) (wheelsize_display & 0x00ff);
 			can_tx_buffer[3] = (uint8_t) ((wheelsize_display >> 8) & 0x00ff);
-			can_tx_buffer[4] = 182;
-			can_tx_buffer[5] = 8;
+			can_tx_buffer[4] = (uint8_t) (circumference_display & 0x00ff);
+			can_tx_buffer[5] = (uint8_t) ((circumference_display >> 8) & 0x00ff);
 			comm_can_transmit_eid(0x02F83203, can_tx_buffer, 6);
 			break;
 		}
@@ -490,6 +493,9 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			//TODO: support "KCAL" parameter in [kmh *100]
 			//conversion rate: KCAL = value * 0.621368.
 			//For example: 0xFFFF = 65535 sets KCAL as 40722
+			uint16_t kcal = mc_interface_get_watt_hours(false);
+			can_tx_buffer[0] = (uint8_t) (kcal & 0x00ff);
+			can_tx_buffer[1] = (uint8_t) ((kcal >> 8 ) & 0x00ff);
 			comm_can_transmit_eid(0x02F83205, can_tx_buffer, 2);
 			break;
 		}

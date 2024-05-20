@@ -59,6 +59,7 @@ float pedal_torque;
 float pedal_torque_filter;
 float output = 0;
 systime_t thread_ticks = 0, thread_t0 = 0, thread_t1 = 0; // used to get more consistent loop rate
+float rider_wh = 0;
 
 int16_t pedal_encoder_count;
 
@@ -160,6 +161,9 @@ float app_pas_get_pedal_rpm(void) {
 	return pedal_rpm;
 }
 
+float app_pas_get_rider_wh(void) {
+	return rider_wh;
+}
 void update_pedal_rpm(float lpf_const)
 {
 	static float old_timestamp = 0;
@@ -219,6 +223,9 @@ static THD_FUNCTION(pas_thread, arg) {
 		pedal_torque = hw_get_pedal_torque();
 		UTILS_LP_FAST(pedal_torque_filter, pedal_torque, lpf_constant);
 		update_pedal_rpm(lpf_constant);
+		float pedal_torque_nm = pedal_torque * 40 * 9.81 * 0.152; // 1 Nm = 40kg * 9.81 N/kg * 0.152 m
+		float rider_w = pedal_torque_nm * (2.0 * M_PI * pedal_rpm) / 60;
+		rider_wh += rider_w / config.update_rate_hz / 3600.0;
 
 		// Debug outputs
 		if( iSample++ % 100 == 0 )
