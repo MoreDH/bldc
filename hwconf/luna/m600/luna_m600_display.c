@@ -494,9 +494,6 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			break;
 		}
 		case STATE_CALORIES:{
-			//TODO: support "KCAL" parameter in [kmh *100]
-			//conversion rate: KCAL = value * 0.621368.
-			//For example: 0xFFFF = 65535 sets KCAL as 40722
 			uint16_t kcal = mc_interface_get_watt_hours(false);
 			can_tx_buffer[0] = (uint8_t) (kcal & 0x00ff);
 			can_tx_buffer[1] = (uint8_t) ((kcal >> 8 ) & 0x00ff);
