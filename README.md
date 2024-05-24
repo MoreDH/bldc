@@ -147,31 +147,31 @@ git push --tags
 
 The software is released under the GNU General Public License version 3.0
 
-# Luna X2 settings (by MoreDH)
+# Luna X2 VESC Settings (MoreDH)
 
 These are the settings I use for trail riding.
 
 ## Bike CFG
 ```
-Current Max					60.00 A
-Cells						13s
-Overvoltage					60.00 V
+Current Max			60.00 A
+Cells				13s
+Overvoltage			60.00 V
 Undervoltage Cutoff Start	40.00 V
 Undervoltage Cutoff End		39.00 V
-Wheel Size					27.5"
-Offset Correction			74.8 deg
+Wheel Size			27.5"
+Offset Correction		74.8 deg
 Invert Motor Direction		Off
 ```
 
 ## Tune
 
 ```
-Throttle Amps				100.0 A
-PAS Amps					100.0 A
-Power						1250 W
-Throttle Response			0.5 s
-Throttle Linearity			0.0 %
-PAS Response				0.4 s
-Field Weakening				0.0 A
-Fixed Throttle Amps			Off
+Throttle Amps			100.0 A
+PAS Amps			100.0 A
+Power				1250 W
+Throttle Response		0.5 s
+Throttle Linearity		0.0 %
+PAS Response			0.4 s
+Field Weakening			0.0 A
+Fixed Throttle Amps		Off
 ```
