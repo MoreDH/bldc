@@ -168,7 +168,7 @@ Invert Motor Direction		Off
 ```
 Throttle Amps			100.0 A
 PAS Amps			100.0 A
-Power				1250 W
+Power				1500 W
 Throttle Response		0.5 s
 Throttle Linearity		0.0 %
 PAS Response			0.4 s
