@@ -231,21 +231,25 @@ static void set_assist_level(uint8_t assist_code) {
 
 	// DPC245 has the following mapping
 	// W	PAS_LEVEL_WALK
-	// 0	PAS_LEVEL_0
-	// E	PAS_LEVEL_2		2.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
-	// T	PAS_LEVEL_4		3.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
-	// S	PAS_LEVEL_6		4.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
-	// S+	PAS_LEVEL_8		6.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
-	// B	PAS_LEVEL_9		9.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// 0	PAS_LEVEL_0		0.0
+	// 		PAS_LEVEL_1		1.0
+	// E	PAS_LEVEL_2		2.0			2.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// 		PAS_LEVEL_3		2.3
+	// T	PAS_LEVEL_4		2.5			2.5		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// 		PAS_LEVEL_5		2.8
+	// S	PAS_LEVEL_6		3.0			3.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// 		PAS_LEVEL_7		4.5
+	// S+	PAS_LEVEL_8		6.0			6.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
+	// B	PAS_LEVEL_9		9.0			9.0		0.65 (LUNA_LIGHT_MODE_ON -> 0.8)
 	switch (assist_code) {
 		case PAS_LEVEL_0: 		current_scale = 0.0; break;
 		case PAS_LEVEL_1: 		current_scale = 1.0 / 9.0; break;
 		case PAS_LEVEL_2: 		current_scale = 2.0 / 9.0; break;
-		case PAS_LEVEL_3: 		current_scale = 2.5 / 9.0; break;
+		case PAS_LEVEL_3: 		current_scale = 2.3 / 9.0; break;
 		case PAS_LEVEL_4: 		current_scale = 2.5 / 9.0; break;
-		case PAS_LEVEL_5: 		current_scale = 3.5 / 9.0; break;
+		case PAS_LEVEL_5: 		current_scale = 2.8 / 9.0; break;
 		case PAS_LEVEL_6: 		current_scale = 3.0 / 9.0; break;
-		case PAS_LEVEL_7: 		current_scale = 5.0 / 9.0; break;
+		case PAS_LEVEL_7: 		current_scale = 4.5 / 9.0; break;
 		case PAS_LEVEL_8: 		current_scale = 6.0 / 9.0; break;
 		case PAS_LEVEL_9: 		current_scale = 1.0; break;
 		case PAS_LEVEL_WALK:	current_scale = 1.0; break;
