@@ -690,7 +690,7 @@ static THD_FUNCTION(display_process_thread, arg) {
 	uint8_t n_states = 6;
 	state_schedule_t state_schedule[n_states];
 	state_schedule[STATE_BATTERY_RANGE]			.time_since_ms	= 0;
-	state_schedule[STATE_BATTERY_RANGE]			.interval_ms	= 1500;
+	state_schedule[STATE_BATTERY_RANGE]			.interval_ms	= 500;
 	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.time_since_ms	= 0;
 	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.interval_ms	= 200;
 	state_schedule[STATE_REFRESH]				.time_since_ms	= 0;

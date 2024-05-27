@@ -1,4 +1,8 @@
-### 6.02 overall
+### 6.02
+#### 2024.05.27 MoreDH
+* Adjust CAN timings so cadence updates more often.
+
+### 6.02
 #### 2024.05.24 MoreDH
 * PAS mode adjustments for 9 level (1, 2, 2.3, 2.5, 2.8, 3.0, 4.5, 6.0, 9.0).
 
