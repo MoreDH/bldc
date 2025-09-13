@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC optimize ("Os")
+
 #include <string.h>
 #include <math.h>
 #include "comm_can.h"
@@ -59,10 +61,10 @@ typedef struct {
 } rx_state;
 
 // Threads
-static THD_WORKING_AREA(cancom_read_thread_wa, 256);
-static THD_WORKING_AREA(cancom_process_thread_wa, 2048);
-static THD_WORKING_AREA(cancom_status_thread_wa, 512);
-static THD_WORKING_AREA(cancom_status_thread_2_wa, 512);
+__attribute__((section(".ram4"))) static THD_WORKING_AREA(cancom_read_thread_wa, 256);
+__attribute__((section(".ram4"))) static THD_WORKING_AREA(cancom_process_thread_wa, 2048);
+__attribute__((section(".ram4"))) static THD_WORKING_AREA(cancom_status_thread_wa, 512);
+__attribute__((section(".ram4"))) static THD_WORKING_AREA(cancom_status_thread_2_wa, 512);
 static THD_FUNCTION(cancom_read_thread, arg);
 static THD_FUNCTION(cancom_status_thread, arg);
 static THD_FUNCTION(cancom_status_thread_2, arg);
@@ -75,9 +77,10 @@ static THD_WORKING_AREA(cancom_status_internal_thread_wa, 512);
 
 static mutex_t can_mtx;
 static mutex_t can_rx_mtx;
-uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
-int rx_buffer_offset[RX_BUFFER_NUM];
-unsigned int rx_buffer_last_id;
+static uint8_t rx_buffer[RX_BUFFER_NUM][RX_BUFFER_SIZE];
+static int rx_buffer_offset[RX_BUFFER_NUM];
+static volatile unsigned int rx_buffer_last_id;
+static volatile unsigned int rx_buffer_response_type = 1;
 static rx_state m_rx_state;
 #ifdef HW_CAN2_DEV
 static rx_state m_rx_state2;
@@ -201,7 +204,41 @@ void comm_can_init(void) {
 #endif
 }
 
-void comm_can_set_baud(CAN_BAUD baud) {
+CAN_BAUD comm_can_kbits_to_baud(int kbits) {
+	CAN_BAUD new_baud = CAN_BAUD_INVALID;
+
+	switch (kbits) {
+	case 125: new_baud = CAN_BAUD_125K; break;
+	case 250: new_baud = CAN_BAUD_250K; break;
+	case 500: new_baud = CAN_BAUD_500K; break;
+	case 1000: new_baud = CAN_BAUD_1M; break;
+	case 10: new_baud = CAN_BAUD_10K; break;
+	case 20: new_baud = CAN_BAUD_20K; break;
+	case 50: new_baud = CAN_BAUD_50K; break;
+	case 75: new_baud = CAN_BAUD_75K; break;
+	case 100: new_baud = CAN_BAUD_100K; break;
+	default: new_baud = CAN_BAUD_INVALID; break;
+	}
+
+	return new_baud;
+}
+
+void comm_can_set_baud(CAN_BAUD baud, int delay_msec) {
+	if (baud == CAN_BAUD_INVALID) {
+		return;
+	}
+
+	if (delay_msec > 0) {
+#ifdef HW_CAN2_DEV
+		canStop(&CAND1);
+		canStop(&CAND2);
+#else
+		canStop(&HW_CAN_DEV);
+#endif
+
+		chThdSleepMilliseconds(delay_msec);
+	}
+
 	switch (baud) {
 	case CAN_BAUD_125K:	set_timing(15, 14, 4); break;
 	case CAN_BAUD_250K:	set_timing(7, 14, 4); break;
@@ -237,15 +274,20 @@ void comm_can_set_baud(CAN_BAUD baud) {
  * 0: Both
  * 1: CAN1
  * 2: CAN2
+ *
+ * @return
+ * MSG_OK for success, anything else otherwise.
  */
-void comm_can_transmit_eid_replace(uint32_t id, const uint8_t *data, uint8_t len, bool replace, int interface) {
+msg_t comm_can_transmit_eid_replace(uint32_t id, const uint8_t *data, uint8_t len, bool replace, int interface) {
 	if (len > 8) {
 		len = 8;
 	}
 
+	msg_t ret = MSG_TIMEOUT;
+
 #if CAN_ENABLE
 	if (!init_done) {
-		return;
+		return MSG_RESET;
 	}
 
 #ifdef HW_HAS_DUAL_MOTORS
@@ -255,7 +297,7 @@ void comm_can_transmit_eid_replace(uint32_t id, const uint8_t *data, uint8_t len
 			uint8_t data_tmp[10];
 			memcpy(data_tmp, data, len);
 			decode_msg(id, data_tmp, len, true);
-			return;
+			return MSG_OK;
 		}
 	}
 #else
@@ -276,18 +318,19 @@ void comm_can_transmit_eid_replace(uint32_t id, const uint8_t *data, uint8_t len
 			msg_t ok = canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, TIME_IMMEDIATE);
 			msg_t ok2 = canTransmit(&HW_CAN2_DEV, CAN_ANY_MAILBOX, &txmsg, TIME_IMMEDIATE);
 			if (ok == MSG_OK || ok2 == MSG_OK) {
+				ret = MSG_OK;
 				break;
 			}
 			chThdSleepMicroseconds(500);
 		}
 	} else if (interface == 1) {
-		canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
+		ret = canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
 	} else if (interface == 2) {
-		canTransmit(&HW_CAN2_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
+		ret = canTransmit(&HW_CAN2_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
 	}
 #else
 	(void)interface;
-	canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
+	ret = canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
 #endif
 	chMtxUnlock(&can_mtx);
 #else
@@ -297,24 +340,27 @@ void comm_can_transmit_eid_replace(uint32_t id, const uint8_t *data, uint8_t len
 	(void)replace;
 	(void)interface;
 #endif
+	return ret;
 }
 
-void comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
-	comm_can_transmit_eid_replace(id, data, len, false, 0);
+msg_t comm_can_transmit_eid(uint32_t id, const uint8_t *data, uint8_t len) {
+	return comm_can_transmit_eid_replace(id, data, len, false, 0);
 }
 
-void comm_can_transmit_eid_if(uint32_t id, const uint8_t *data, uint8_t len, int interface) {
-	comm_can_transmit_eid_replace(id, data, len, false, interface);
+msg_t comm_can_transmit_eid_if(uint32_t id, const uint8_t *data, uint8_t len, int interface) {
+	return comm_can_transmit_eid_replace(id, data, len, false, interface);
 }
 
-void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
+msg_t comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	if (len > 8) {
 		len = 8;
 	}
 
+	msg_t ret = MSG_TIMEOUT;
+
 #if CAN_ENABLE
 	if (!init_done) {
-		return;
+		return MSG_RESET;
 	}
 
 	CANTxFrame txmsg;
@@ -330,12 +376,13 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 		msg_t ok = canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, TIME_IMMEDIATE);
 		msg_t ok2 = canTransmit(&HW_CAN2_DEV, CAN_ANY_MAILBOX, &txmsg, TIME_IMMEDIATE);
 		if (ok == MSG_OK || ok2 == MSG_OK) {
+			ret = MSG_OK;
 			break;
 		}
 		chThdSleepMicroseconds(500);
 	}
 #else
-	canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
+	ret = canTransmit(&HW_CAN_DEV, CAN_ANY_MAILBOX, &txmsg, MS2ST(5));
 #endif
 	chMtxUnlock(&can_mtx);
 #else
@@ -343,6 +390,7 @@ void comm_can_transmit_sid(uint32_t id, const uint8_t *data, uint8_t len) {
 	(void)data;
 	(void)len;
 #endif
+	return ret;
 }
 
 /**
@@ -390,6 +438,7 @@ void comm_can_set_eid_rx_callback(bool (*p_func)(uint32_t id, uint8_t *data, uin
  * 1: Packet goes to commands_send_packet of receiver
  * 2: Packet goes to commands_process and send function is set to null
  *    so that no reply is sent back.
+ * 3: Same as 0, but the reply is processed locally and not sent out on the last interface.
  */
 void comm_can_send_buffer(uint8_t controller_id, uint8_t *data, unsigned int len, uint8_t send) {
 	uint8_t send_buffer[8];
@@ -767,6 +816,17 @@ void comm_can_shutdown(uint8_t controller_id) {
 	uint8_t buffer[8];
 	comm_can_transmit_eid_replace(controller_id |
 			((uint32_t)(CAN_PACKET_SHUTDOWN) << 8), buffer, send_index, true, 0);
+}
+
+void comm_can_send_update_baud(int kbits, int delay_msec) {
+	int32_t send_index = 0;
+	uint8_t buffer[8];
+
+	buffer_append_int16(buffer, kbits, &send_index);
+	buffer_append_int16(buffer, delay_msec, &send_index);
+
+	comm_can_transmit_eid_replace(255 | ((uint32_t)CAN_PACKET_UPDATE_BAUD << 8),
+				buffer, send_index, false, 0);
 }
 
 /**
@@ -1494,7 +1554,7 @@ static THD_FUNCTION(cancom_status_thread_2, arg) {
 }
 
 static void send_packet_wrapper(unsigned char *data, unsigned int len) {
-	comm_can_send_buffer(rx_buffer_last_id, data, len, 1);
+	comm_can_send_buffer(rx_buffer_last_id, data, len, rx_buffer_response_type);
 }
 
 static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) {
@@ -1560,7 +1620,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			break;
 
 		case CAN_PACKET_FILL_RX_BUFFER: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = data8[0];
 			data8++;
 			len--;
@@ -1572,12 +1632,20 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			memcpy(rx_buffer[buf_ind] + offset, data8, len);
-			rx_buffer_offset[buf_ind] += len;
+			rx_buffer_offset[buf_ind] = offset + len;
 		} break;
 
 		case CAN_PACKET_FILL_RX_BUFFER_LONG: {
-			int buf_ind = 0;
+			int buf_ind = -1;
 			int offset = (int)data8[0] << 8;
 			offset |= data8[1];
 			data8 += 2;
@@ -1590,9 +1658,17 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 				}
 			}
 
+			if (buf_ind < 0) {
+				if (offset == 0) {
+					buf_ind = 0;
+				} else {
+					break;
+				}
+			}
+
 			if ((offset + len) <= RX_BUFFER_SIZE) {
 				memcpy(rx_buffer[buf_ind] + offset, data8, len);
-				rx_buffer_offset[buf_ind] += len;
+				rx_buffer_offset[buf_ind] = offset + len;
 			}
 		} break;
 
@@ -1601,8 +1677,14 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			unsigned int last_id = data8[ind++];
 			commands_send = data8[ind++];
 
-			if (commands_send == 0) {
+			if (commands_send == 0 || commands_send == 3) {
 				rx_buffer_last_id = last_id;
+			}
+
+			if (commands_send == 3) {
+				rx_buffer_response_type = 0;
+			} else {
+				rx_buffer_response_type = 1;
 			}
 
 			int rxbuf_len = (int)data8[ind++] << 8;
@@ -1649,6 +1731,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 				switch (commands_send) {
 				case 0:
+				case 3:
 					commands_process_packet(rx_buffer[buf_ind], rxbuf_len, send_packet_wrapper);
 					break;
 				case 1:
@@ -1668,8 +1751,14 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 			unsigned int last_id = data8[ind++];
 			commands_send = data8[ind++];
 
-			if (commands_send == 0) {
+			if (commands_send == 0 || commands_send == 3) {
 				rx_buffer_last_id = last_id;
+			}
+
+			if (commands_send == 3) {
+				rx_buffer_response_type = 0;
+			} else {
+				rx_buffer_response_type = 1;
 			}
 
 			if (is_replaced) {
@@ -1684,6 +1773,7 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 
 			switch (commands_send) {
 			case 0:
+			case 3:
 				commands_process_packet(data8 + ind, len - ind, send_packet_wrapper);
 				break;
 			case 1:
@@ -2126,6 +2216,21 @@ static void decode_msg(uint32_t eid, uint8_t *data8, int len, bool is_replaced) 
 		d->speed = buffer_get_float16(data8, 1.0e2, &ind);
 		d->hdop = buffer_get_float16(data8, 1.0e2, &ind);
 		d->last_update = chVTGetSystemTimeX();
+	} break;
+
+	case CAN_PACKET_UPDATE_BAUD: {
+		ind = 0;
+		int kbits = buffer_get_int16(data8, &ind);
+		int delay_msec = buffer_get_int16(data8, &ind);
+
+		CAN_BAUD baud = comm_can_kbits_to_baud(kbits);
+		if (baud != CAN_BAUD_INVALID) {
+			comm_can_set_baud(baud, delay_msec);
+
+			app_configuration *appconf = (app_configuration*)app_get_configuration();
+			appconf->can_baud_rate = baud;
+			conf_general_store_app_configuration(appconf);
+		}
 	} break;
 
 	default:

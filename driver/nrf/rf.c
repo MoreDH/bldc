@@ -18,6 +18,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC optimize ("Os")
+
 #include "rf.h"
 #include "spi_sw.h"
 #include "ch.h"

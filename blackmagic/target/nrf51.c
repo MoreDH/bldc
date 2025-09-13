@@ -21,6 +21,8 @@
  * the device, providing the XML memory map and Flash memory programming.
  */
 
+#pragma GCC optimize ("Os")
+
 #include "general.h"
 #include "target.h"
 #include "target_internal.h"

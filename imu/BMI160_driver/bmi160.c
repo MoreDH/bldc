@@ -46,6 +46,8 @@
  *
  */
 
+#pragma GCC optimize ("Os")
+
 /*!
  * @defgroup bmi160
  * @brief

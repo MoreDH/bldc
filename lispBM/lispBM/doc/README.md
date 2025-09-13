@@ -2,14 +2,18 @@
 
 # LispBM Programming Documentation
 
-
 [Language reference](./lbmref.md)
 
+## Extension libraries
 
-## Programming manual
+[Display library](./displayref.md)
 
-[Chapter 1: Introduction](./manual/ch1_introduction.md)
+[Runtime library](./runtimeref.md)
 
-[Chapter 2: List processing](./manual/ch2_list_processing.md)
+[Library of dynamically loadable functionality](./dynref.md)
 
-[Chapter 3: Concurrency](./manual/ch3_concurrency.md)
+
+## Gotchas
+
+[Gotchas and caveats](./gotchas.md)
+

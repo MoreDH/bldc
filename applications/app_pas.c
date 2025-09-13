@@ -18,6 +18,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC optimize ("Os")
+
 #include "app.h"
 
 #include "ch.h"
@@ -34,13 +36,14 @@
 #include "terminal.h"
 
 // Settings
-#define PEDAL_INPUT_TIMEOUT				0.2
-#define MAX_MS_WITHOUT_CADENCE			2500
-#define MIN_MS_WITHOUT_POWER			500
+#define PEDAL_INPUT_TIMEOUT					0.2
+#define MAX_MS_WITHOUT_CADENCE_OR_TORQUE	5000
+#define MAX_MS_WITHOUT_CADENCE				1000
+#define MIN_MS_WITHOUT_POWER				500
 
 // Threads
 static THD_FUNCTION(pas_thread, arg);
-static THD_WORKING_AREA(pas_thread_wa, 512);
+__attribute__((section(".ram4"))) static THD_WORKING_AREA(pas_thread_wa, 512);
 
 // Private variables
 static volatile pas_config config;
@@ -208,6 +211,7 @@ static THD_FUNCTION(pas_thread, arg) {
 		// Sleep for a time according to the specified rate
 		thread_ticks = thread_t1 - thread_t0;
 		const systime_t nominal_sleep_ticks = CH_CFG_ST_FREQUENCY / config.update_rate_hz;
+		float nominal_period_ms = 1000.0 / config.update_rate_hz;
 		systime_t sleep_ticks = nominal_sleep_ticks - thread_ticks;
 		sleep_ticks = MIN(sleep_ticks, nominal_sleep_ticks); // Limit max to nominal
 		sleep_ticks = MAX(sleep_ticks, nominal_sleep_ticks / 2); // Limit min to nominal / 2
@@ -287,10 +291,21 @@ static THD_FUNCTION(pas_thread, arg) {
 				if(output == 0.0 || pedal_rpm > 0) {
 					ms_without_cadence_or_torque = 0.0;
 				} else {
-					ms_without_cadence_or_torque += 1000.0 / config.update_rate_hz;
-					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE) {
+					ms_without_cadence_or_torque += nominal_period_ms;
+					if(ms_without_cadence_or_torque > MAX_MS_WITHOUT_CADENCE_OR_TORQUE) {
 						output = 0.0;
 					}
+				}
+				// if cranks are not moving, there should not be any output. This covers the case of a torque sensor
+				// stuck with a non-zero signal.
+				static float ms_without_cadence = 0.0;
+				if(pedal_rpm < 0.01) {
+					ms_without_cadence += nominal_period_ms;
+					if(ms_without_cadence > MAX_MS_WITHOUT_CADENCE) {
+						output = 0.0;
+					}
+				} else {
+					ms_without_cadence = 0.0;
 				}
 			}
 #endif
@@ -313,7 +328,7 @@ static THD_FUNCTION(pas_thread, arg) {
 		}
 
 		if (output < 0.001) {
-			ms_without_power += 1000.0 / config.update_rate_hz;
+			ms_without_power += nominal_period_ms;
 		}
 
 		// Safe start is enabled if the output has not been zero for long enough

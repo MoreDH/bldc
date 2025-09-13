@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC optimize ("Os")
+
 #include <string.h>
 #include "nrf_driver.h"
 #include "rf.h"
@@ -482,6 +484,7 @@ void nrf_driver_process_packet(unsigned char *buf, unsigned char len) {
 		appconf.app_nrf_conf.retry_delay = NRF_RETR_DELAY_1000US;
 		appconf.app_nrf_conf.send_crc_ack = true;
 		appconf.app_nrf_conf.speed = NRF_SPEED_1M;
+		appconf.pairing_done = true;
 
 		if (ext_nrf) {
 			unsigned char data[5];

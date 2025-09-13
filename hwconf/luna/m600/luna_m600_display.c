@@ -36,8 +36,9 @@
 
 #include "mcpwm_foc.h" // for encoder angle error
 
-#define LUNA_TORQUE_SENSOR_MINIMUM_TORQUE	0x02EE
-#define LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE	0x0C80
+#define LUNA_TORQUE_SENSOR_MINIMUM_RANGE	0x02EE
+#define LUNA_TORQUE_SENSOR_MAXIMUM_RANGE	0x0C80
+#define LUNA_TORQUE_SENSOR_DEADBAND			0.03
 
 typedef enum {
 	PAS_LEVEL_0 = 0x00,
@@ -52,6 +53,16 @@ typedef enum {
 	PAS_LEVEL_9 = 0x03,
 	PAS_LEVEL_WALK = 0x06,
 } LUNA_PAS_LEVEL;
+
+typedef enum {
+	WRITE_LOW_BATTERY_ERROR = 0x00,
+	WRITE_MAX_CURRENT_ERROR = 0x01,
+	WRITE_ASSIST_LEVEL_ERROR = 0x02,
+	WRITE_ASSIST_SPEED_ERROR = 0x0C,
+	WRITE_SPEEDOMETER_ERROR = 0x16,
+	WRITE_SPEEDOMETER_SIGNAL_ERROR = 0x17,
+	WRITE_BASIC_SUCCESS = 0x18
+} CMD_WRITE_BASIC_RESPONSE;
 
 typedef enum {
 	LUNA_HMI_LEVEL_ID = 0x03106300,
@@ -69,9 +80,19 @@ typedef enum {
 } LUNA_CAN_IDs;
 
 typedef enum {
-	LUNA_HMI_LEVEL_ID_BYTES = 4,
-	LUNA_TORQUE_SENSOR_ID_BYTES = 4,
-} LUNA_CAN_IDs_BYTES;
+	LUNA_HMI_LEVEL_ID_LENGTH_BYTES = 4,
+	LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES = 4,
+	LUNA_HMI_RQST_HW_LEN_ID_LENGTH_BYTES = 4,
+	LUNA_HMI_RQST_HW_DATA_ID_LENGTH_BYTES = 4,
+	LUNA_HMI_RQST_SW_LEN_ID_LENGTH_BYTES = 4,
+	LUNA_HMI_RQST_SW_DATA_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_HW_LEN_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_HW_DATA_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_SW_LEN_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_SW_DATA_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_SN_LEN_ID_LENGTH_BYTES = 4,
+	LUNA_APP_RQST_SN_DATA_ID_LENGTH_BYTES = 4,
+} LUNA_CAN_IDs_LENGTH_BYTES;
 
 typedef enum {
 	LUNA_LIGHT_MODE_OFF = 0,
@@ -96,15 +117,17 @@ typedef enum {
 	LUNA_ERROR_TORQUE_SENSOR = 0x25,
 	LUNA_ERROR_SPEED_SENSOR = 0x26,
 	LUNA_ERROR_COMMUNICATION = 0x30,
+	LUNA_ERROR_TORQUE_SENSOR_OUT_OF_RANGE = 0x100
 } LUNA_ERROR_CODES;
 
 typedef enum{
-	STATE_BATTERY_RANGE,
-	STATE_SPEED_CURRENT_VOLTAGE,
-	STATE_REFRESH,
-	STATE_SPEED_LIMIT_WHEEL_SIZE,
-	STATE_CALORIES,
-	STATE_FAULTS,
+	SEND_BATTERY_RANGE_STATE,
+	SEND_SPEED_CURRENT_VOLTAGE_STATE,
+	SEND_REFRESH_STATE,
+	SEND_SPEED_LIMIT_WHEEL_SIZE_STATE,
+	SEND_CALORIES_STATE,
+	SEND_ERROR_STATE,
+	SEND_SHUTDOWN_STATE,
 } can_display_process_states_t;
 
 typedef struct{
@@ -117,7 +140,11 @@ typedef struct{
 	LUNA_PAS_LEVEL pas_level;
 	LUNA_ERROR_CODES error_code;
 	bool torque_sensor_is_active;
-	float pedal_torque_norm;
+	int32_t torque_sensor_output;
+	float torque_sensor_output_filtered;
+	int32_t torque_sensor_upper_range;
+	int32_t torque_sensor_lower_range;
+	float torque_sensor_deadband;
 	uint8_t assist_code;
 } luna_settings_t;
 
@@ -125,7 +152,10 @@ static volatile luna_settings_t luna_settings =	{	.light_mode = LUNA_LIGHT_MODE_
 													.pas_level = PAS_LEVEL_0,
 													.error_code = LUNA_ERROR_NONE,
 													.torque_sensor_is_active = false,
-													.pedal_torque_norm = 0.0
+													.torque_sensor_upper_range = LUNA_TORQUE_SENSOR_MAXIMUM_RANGE,
+													.torque_sensor_lower_range = LUNA_TORQUE_SENSOR_MINIMUM_RANGE,
+													.torque_sensor_deadband = LUNA_TORQUE_SENSOR_DEADBAND,
+													.torque_sensor_output_filtered = 0.0
 												};
 static volatile bool display_thread_is_running = false;
 static volatile bool display_uart_is_running = false;
@@ -155,8 +185,73 @@ void luna_canbus_start(void) {
  * @return
  * 0.0 for no torque applied, 1.0 for maximum torque applied
  */
-float luna_get_pedal_torque(void){
-	return luna_settings.pedal_torque_norm;
+float luna_canbus_get_pedal_torque(void){
+	return luna_settings.torque_sensor_output_filtered;
+}
+
+int32_t get_torque_sensor_output(void){
+	return luna_settings.torque_sensor_output;
+}
+
+float get_torque_sensor_deadband(void){
+	return luna_settings.torque_sensor_deadband;
+}
+
+int32_t set_torque_sensor_upper_range(int32_t new_upper_range) {
+	uint32_t ret;
+
+	// Check if the new_upper_range is within the expected range
+	if ( (new_upper_range > LUNA_TORQUE_SENSOR_MAXIMUM_RANGE) || (new_upper_range < LUNA_TORQUE_SENSOR_MINIMUM_RANGE) ) {
+		ret = LUNA_ERROR_TORQUE_SENSOR_OUT_OF_RANGE;
+	} else {
+		luna_settings.torque_sensor_upper_range = new_upper_range;
+		ret = LUNA_ERROR_NONE;
+	}
+	return ret;
+}
+
+int32_t set_torque_sensor_lower_range(int32_t new_lower_range) {
+	uint32_t ret;
+
+	// Check if the new_lower_range is within the expected range
+	if ( (new_lower_range > LUNA_TORQUE_SENSOR_MAXIMUM_RANGE) || (new_lower_range < LUNA_TORQUE_SENSOR_MINIMUM_RANGE) ) {
+		ret = LUNA_ERROR_TORQUE_SENSOR_OUT_OF_RANGE;
+	} else {
+		luna_settings.torque_sensor_lower_range = new_lower_range;
+		ret = LUNA_ERROR_NONE;
+	}
+	return ret;
+}
+
+int32_t get_torque_sensor_lower_range(void) {
+	return luna_settings.torque_sensor_lower_range;
+}
+
+int32_t get_torque_sensor_upper_range(void) {
+	return luna_settings.torque_sensor_upper_range;
+}
+
+// calibration procedure: make sure that the user is not pressing the pedals, then
+// sample the TS for 3 full second and use that as as the new lower range baseline
+int32_t measure_torque_sensor_offset(void) {
+	float average = 0.0;
+
+	for(uint32_t samples = 0; samples < 100 ; samples++) {
+		average += luna_settings.torque_sensor_output;
+		chThdSleep(MS2ST(30));
+	}
+	average /= 100.0;
+	return (int32_t)average;
+}
+
+/**
+ * Get the current Pedal Assist level
+ *
+ * @return
+ * Assist level from 0 (min) to 9 (max power). 
+ */
+LUNA_PAS_LEVEL luna_canbus_get_pas_level(void){
+	return luna_settings.pas_level;
 }
 
 /**
@@ -275,7 +370,7 @@ float time_since_display_change=0;
 uint16_t distance_display;
 
 uint32_t delay_between_torque_sensor_message = 0;
-uint32_t luna_get_torque_dt(void){
+uint32_t luna_canbus_get_pedal_torque_dt(void){
 	return delay_between_torque_sensor_message;
 }
 
@@ -374,7 +469,7 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 		case -1:{
 			break;
 		}
-		case STATE_BATTERY_RANGE:{
+		case SEND_BATTERY_RANGE_STATE:{
 			float wh_left;
 			float battery_level = mc_interface_get_battery_level(&wh_left) * 100.0;
 			utils_truncate_number(&battery_level, 0.0, 100.0);
@@ -437,7 +532,7 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			comm_can_transmit_eid(0x02F83200, can_tx_buffer, 8);
 			break;
 		}
-		case STATE_SPEED_CURRENT_VOLTAGE:{
+		case SEND_SPEED_CURRENT_VOLTAGE_STATE:{
 #ifdef HW_HAS_WHEEL_SPEED_SENSOR
 			//float wheel_rpm = hw_get_wheel_rpm();
 			//float wheelsize_in_meters = mcconf->si_wheel_diameter / 1000.0;
@@ -466,11 +561,11 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			comm_can_transmit_eid(0x02F83201, can_tx_buffer, 8);
 			break;
 		}
-		case STATE_REFRESH:{
+		case SEND_REFRESH_STATE:{
 			comm_can_transmit_eid(0x02FF1203, can_tx_buffer, 1);
 			break;
 		}
-		case STATE_SPEED_LIMIT_WHEEL_SIZE:{
+		case SEND_SPEED_LIMIT_WHEEL_SIZE_STATE:{
 			//"speed limit" parameter [kmh *100]
 			float speed_limit = 32.2;// dummy 32.2km/h (20mph)
 			uint16_t speed_limit_display = speed_limit * 100;
@@ -493,14 +588,14 @@ static void can_bus_display_process(uint32_t dt_ms, state_schedule_t * state_sch
 			comm_can_transmit_eid(0x02F83203, can_tx_buffer, 6);
 			break;
 		}
-		case STATE_CALORIES:{
+		case SEND_CALORIES_STATE:{
 			uint16_t kcal = mc_interface_get_watt_hours(false);
 			can_tx_buffer[0] = (uint8_t) (kcal & 0x00ff);
 			can_tx_buffer[1] = (uint8_t) ((kcal >> 8 ) & 0x00ff);
 			comm_can_transmit_eid(0x02F83205, can_tx_buffer, 2);
 			break;
 		}
-		case STATE_FAULTS:{
+		case SEND_ERROR_STATE:{
 			can_tx_buffer[0] = luna_settings.error_code;
 			comm_can_transmit_eid(0x02FF1200, can_tx_buffer, 1);
 			break;
@@ -542,7 +637,7 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 
 	switch( cmd_id ){
 		case LUNA_HMI_LEVEL_ID:{
-			if( len == LUNA_HMI_LEVEL_ID_BYTES){
+			if( len == LUNA_HMI_LEVEL_ID_LENGTH_BYTES){
 				if( data != NULL ){
 					used_data = true;
 
@@ -563,14 +658,19 @@ static bool can_bus_rx_callback(uint32_t id, uint8_t *data, uint8_t len) {
 			break;
 		}
 		case LUNA_TORQUE_SENSOR_ID:{
-			if( len == LUNA_TORQUE_SENSOR_ID_BYTES ){
-				if( data != NULL ){
+			if(len == LUNA_TORQUE_SENSOR_ID_LENGTH_BYTES){
+				if(data != NULL){
 					used_data = true;
 					luna_settings.torque_sensor_is_active = true;
-					uint16_t torque_raw = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0] & 0x00ff);
-					float torque_norm = ((float)torque_raw - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE) / (LUNA_TORQUE_SENSOR_MAXIMUM_TORQUE - LUNA_TORQUE_SENSOR_MINIMUM_TORQUE);
-					utils_truncate_number(&torque_norm, 0, 1);
-					luna_settings.pedal_torque_norm = torque_norm;
+					uint16_t torque_sensor_output = (((uint16_t)data[1] << 8 ) & 0xff00) | ((uint16_t)data[0]&0x00ff);
+
+					luna_settings.torque_sensor_output = torque_sensor_output;
+
+					float normalized_torque_sensor_output = utils_map((float)torque_sensor_output, (float)luna_settings.torque_sensor_lower_range, (float)luna_settings.torque_sensor_upper_range, 0.0, 1.0);
+					utils_truncate_number(&normalized_torque_sensor_output, 0.0, 1.0);
+					utils_deadband(&normalized_torque_sensor_output, luna_settings.torque_sensor_deadband, 1.0);
+					// faster filter in app_pas UTILS_LP_FAST(luna_settings.torque_sensor_output_filtered, normalized_torque_sensor_output, 0.1);
+					luna_settings.torque_sensor_output_filtered = normalized_torque_sensor_output;
 				}
 			}
 			break;
@@ -689,18 +789,18 @@ static THD_FUNCTION(display_process_thread, arg) {
 
 	uint8_t n_states = 6;
 	state_schedule_t state_schedule[n_states];
-	state_schedule[STATE_BATTERY_RANGE]			.time_since_ms	= 0;
-	state_schedule[STATE_BATTERY_RANGE]			.interval_ms	= 500;
-	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.time_since_ms	= 0;
-	state_schedule[STATE_SPEED_CURRENT_VOLTAGE]	.interval_ms	= 200;
-	state_schedule[STATE_REFRESH]				.time_since_ms	= 0;
-	state_schedule[STATE_REFRESH]				.interval_ms 	= 100;
-	state_schedule[STATE_SPEED_LIMIT_WHEEL_SIZE].time_since_ms	= 0;
-	state_schedule[STATE_SPEED_LIMIT_WHEEL_SIZE].interval_ms 	= 2000;
-	state_schedule[STATE_CALORIES]				.time_since_ms 	= 0;
-	state_schedule[STATE_CALORIES]				.interval_ms 	= 3000;
-	state_schedule[STATE_FAULTS]				.time_since_ms 	= 0;
-	state_schedule[STATE_FAULTS]				.interval_ms 	= 400;
+	state_schedule[SEND_BATTERY_RANGE_STATE]			.time_since_ms	= 0;
+	state_schedule[SEND_BATTERY_RANGE_STATE]			.interval_ms	= 500;
+	state_schedule[SEND_SPEED_CURRENT_VOLTAGE_STATE]	.time_since_ms	= 0;
+	state_schedule[SEND_SPEED_CURRENT_VOLTAGE_STATE]	.interval_ms	= 200;
+	state_schedule[SEND_REFRESH_STATE]				.time_since_ms	= 0;
+	state_schedule[SEND_REFRESH_STATE]				.interval_ms 	= 100;
+	state_schedule[SEND_SPEED_LIMIT_WHEEL_SIZE_STATE].time_since_ms	= 0;
+	state_schedule[SEND_SPEED_LIMIT_WHEEL_SIZE_STATE].interval_ms 	= 2000;
+	state_schedule[SEND_CALORIES_STATE]				.time_since_ms 	= 0;
+	state_schedule[SEND_CALORIES_STATE]				.interval_ms 	= 3000;
+	state_schedule[SEND_ERROR_STATE]				.time_since_ms 	= 0;
+	state_schedule[SEND_ERROR_STATE]				.interval_ms 	= 400;
 
 	for(;;) {
 		float uptime = chVTGetSystemTime() / (float) CH_CFG_ST_FREQUENCY;
@@ -725,7 +825,7 @@ static THD_FUNCTION(display_process_thread, arg) {
 		}
 		// when PAS level set to 0, the system would shut down after 10 minutes of non-assisted pedaling
 		// so we force it to stay ON if there is pedal activity
-		if(luna_get_pedal_torque() > 0.25) {
+		if(luna_canbus_get_pedal_torque() > 0.25) {
 			shutdown_reset_timer();
 		}
 

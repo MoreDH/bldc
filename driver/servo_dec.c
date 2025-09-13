@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC optimize ("Os")
+
 #include "servo_dec.h"
 #include "stm32f4xx_conf.h"
 #include "ch.h"
@@ -24,9 +26,7 @@
 #include "hw.h"
 #include "utils_math.h"
 
-/*
- * Settings
- */
+// Settings
 #define SERVO_NUM				1
 #define TIMER_FREQ				1000000
 

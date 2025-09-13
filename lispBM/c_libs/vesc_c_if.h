@@ -170,12 +170,11 @@ typedef float    lbm_float;
 
 typedef struct {
 	uint8_t *buf;
-	size_t   buf_size;
-	uint32_t buf_pos;
+	lbm_uint buf_size;
+	lbm_uint buf_pos;
 } lbm_flat_value_t;
 
 typedef struct {
-	lbm_type elt_type;        /// Type of elements: VAL_TYPE_FLOAT, U, I or CHAR
 	lbm_uint size;            /// Number of elements
 	lbm_uint *data;           /// pointer to lbm_memory array or C array.
 } lbm_array_header_t;
@@ -208,6 +207,7 @@ typedef bool (*load_extension_fptr)(char*,extension_fptr);
 
 typedef void* lib_thread;
 typedef void* lib_mutex;
+typedef void* lib_semaphore;
 
 typedef enum {
 	VESC_PIN_COMM_RX = 0,
@@ -223,6 +223,8 @@ typedef enum {
 	VESC_PIN_HALL5,
 	VESC_PIN_HALL6,
 	VESC_PIN_PPM,
+	VESC_PIN_HW_1,
+	VESC_PIN_HW_2,	
 } VESC_PIN;
 
 typedef enum {
@@ -276,6 +278,30 @@ typedef enum {
 	CFG_PARAM_IMU_rot_roll,
 	CFG_PARAM_IMU_rot_pitch,
 	CFG_PARAM_IMU_rot_yaw,
+	CFG_PARAM_IMU_ahrs_mode,
+	CFG_PARAM_IMU_sample_rate,
+	CFG_PARAM_IMU_accel_offset_x,
+	CFG_PARAM_IMU_accel_offset_y,
+	CFG_PARAM_IMU_accel_offset_z,
+	CFG_PARAM_IMU_gyro_offset_x,
+	CFG_PARAM_IMU_gyro_offset_y,
+	CFG_PARAM_IMU_gyro_offset_z,
+
+	CFG_PARAM_app_shutdown_mode,
+
+	// Motor Additional Info
+	CFG_PARAM_si_motor_poles,
+	CFG_PARAM_si_gear_ratio,
+	CFG_PARAM_si_wheel_diameter,
+	CFG_PARAM_si_battery_type,
+	CFG_PARAM_si_battery_cells,
+	CFG_PARAM_si_battery_ah,
+	CFG_PARAM_si_motor_nl_current,
+
+	// Motor FOC Parameters
+	CFG_PARAM_foc_motor_r,
+	CFG_PARAM_foc_motor_l,
+	CFG_PARAM_foc_motor_flux_linkage,
 } CFG_PARAM;
 
 typedef struct {
@@ -289,7 +315,10 @@ typedef struct {
 
 /*
  * Function pointer struct. Always add new function pointers to the end in order to not
- * break compatibility with old binaries.
+ * break compatibility with old binaries. If a function is not available (e.g. in an
+ * old firmware) it will be a null-pointer. If you make a package that is meant to
+ * run on older firmware too you can check if the newer functions are null pointers to
+ * know if they are available.
  */
 typedef struct {
 	// LBM
@@ -314,7 +343,7 @@ typedef struct {
 
 	lbm_value (*lbm_enc_i)(lbm_int x);
 	lbm_value (*lbm_enc_u)(lbm_uint x);
-	lbm_value (*lbm_enc_char)(char x);
+	lbm_value (*lbm_enc_char)(uint8_t x);
 	lbm_value (*lbm_enc_float)(float f);
 	lbm_value (*lbm_enc_u32)(uint32_t u);
 	lbm_value (*lbm_enc_i32)(int32_t i);
@@ -323,7 +352,7 @@ typedef struct {
 	float (*lbm_dec_as_float)(lbm_value val);
 	uint32_t (*lbm_dec_as_u32)(lbm_value val);
 	int32_t (*lbm_dec_as_i32)(lbm_value val);
-	char (*lbm_dec_char)(lbm_value x);
+	uint8_t (*lbm_dec_char)(lbm_value x);
 	char* (*lbm_dec_str)(lbm_value);
 	lbm_uint (*lbm_dec_sym)(lbm_value x);
 
@@ -350,7 +379,7 @@ typedef struct {
 	int (*printf)(const char *str, ...);
 	void* (*malloc)(size_t bytes);
 	void (*free)(void *prt);
-	lib_thread (*spawn)(void (*fun)(void *arg), size_t stack_size, char *name, void *arg);
+	lib_thread (*spawn)(void (*fun)(void *arg), size_t stack_size, const char *name, void *arg);
 	void (*request_terminate)(lib_thread thd);
 	bool (*should_terminate)(void);
 	void** (*get_arg)(uint32_t prog_addr);
@@ -466,7 +495,7 @@ typedef struct {
 
 	// UART
 	bool (*uart_start)(uint32_t baudrate, bool half_duplex);
-	bool (*uart_write)(uint8_t *data, uint32_t size);
+	bool (*uart_write)(const uint8_t *data, uint32_t size);
 	int32_t (*uart_read)(void);
 
 	// Packets
@@ -486,7 +515,7 @@ typedef struct {
 	void (*imu_get_accel)(float *accel);
 	void (*imu_get_gyro)(float *gyro);
 	void (*imu_get_mag)(float *mag);
-	void (*imu_derotate)(float *input, float *output);
+	void (*imu_derotate)(const float *input, float *output);
 	void (*imu_get_accel_derotated)(float *accel);
 	void (*imu_get_gyro_derotated)(float *gyro);
 	void (*imu_get_quaternions)(float *q);
@@ -511,8 +540,8 @@ typedef struct {
 	float (*timeout_secs_since_update)(void);
 
 	// Plot
-	void (*plot_init)(char *namex, char *namey);
-	void (*plot_add_graph)(char *name);
+	void (*plot_init)(const char *namex, const char *namey);
+	void (*plot_add_graph)(const char *name);
 	void (*plot_set_graph)(int graph);
 	void (*plot_send_points)(float x, float y);
 
@@ -534,7 +563,7 @@ typedef struct {
 	volatile gnss_data* (*mc_gnss)(void);
 
 	// Mutex
-	lib_mutex (*mutex_create)(void);
+	lib_mutex (*mutex_create)(void); // Use VESC_IF->free on the mutex when done with it
 	void (*mutex_lock)(lib_mutex);
 	void (*mutex_unlock)(lib_mutex);
 
@@ -556,12 +585,12 @@ typedef struct {
 	// IMU AHRS functions and read callback
 	void (*imu_set_read_callback)(void (*func)(float *acc, float *gyro, float *mag, float dt));
 	void (*ahrs_init_attitude_info)(ATTITUDE_INFO *att);
-	void (*ahrs_update_initial_orientation)(float *accelXYZ, float *magXYZ, ATTITUDE_INFO *att);
-	void (*ahrs_update_mahony_imu)(float *gyroXYZ, float *accelXYZ, float dt, ATTITUDE_INFO *att);
-	void (*ahrs_update_madgwick_imu)(float *gyroXYZ, float *accelXYZ, float dt, ATTITUDE_INFO *att);
-	float (*ahrs_get_roll)(ATTITUDE_INFO *att);
-	float (*ahrs_get_pitch)(ATTITUDE_INFO *att);
-	float (*ahrs_get_yaw)(ATTITUDE_INFO *att);
+	void (*ahrs_update_initial_orientation)(const float *accelXYZ, const float *magXYZ, ATTITUDE_INFO *att);
+	void (*ahrs_update_mahony_imu)(const float *gyroXYZ, const float *accelXYZ, float dt, ATTITUDE_INFO *att);
+	void (*ahrs_update_madgwick_imu)(const float *gyroXYZ, const float *accelXYZ, float dt, ATTITUDE_INFO *att);
+	float (*ahrs_get_roll)(const ATTITUDE_INFO *att);
+	float (*ahrs_get_pitch)(const ATTITUDE_INFO *att);
+	float (*ahrs_get_yaw)(const ATTITUDE_INFO *att);
 
 	// Set custom encoder callbacks
 	void (*encoder_set_custom_callbacks)(
@@ -592,6 +621,54 @@ typedef struct {
 	void (*foc_set_openloop_phase)(float current, float phase);
 	void (*foc_set_openloop_duty)(float dutyCycle, float rpm);
 	void (*foc_set_openloop_duty_phase)(float dutyCycle, float phase);
+
+	// Functions below were added in firmware 6.05
+
+	// Flat values
+	bool (*lbm_start_flatten)(lbm_flat_value_t *v, size_t buffer_size);
+	bool (*lbm_finish_flatten)(lbm_flat_value_t *v);
+	bool (*f_cons)(lbm_flat_value_t *v);
+	bool (*f_sym)(lbm_flat_value_t *v, lbm_uint sym);
+	bool (*f_i)(lbm_flat_value_t *v, lbm_int i);
+	bool (*f_b)(lbm_flat_value_t *v, uint8_t b);
+	bool (*f_i32)(lbm_flat_value_t *v, int32_t w);
+	bool (*f_u32)(lbm_flat_value_t *v, uint32_t w);
+	bool (*f_float)(lbm_flat_value_t *v, float f);
+	bool (*f_i64)(lbm_flat_value_t *v, int64_t w);
+	bool (*f_u64)(lbm_flat_value_t *v, uint64_t w);
+	bool (*f_lbm_array)(lbm_flat_value_t *v, uint32_t num_elts, uint8_t *data);
+
+	// Unblock unboxed
+	bool (*lbm_unblock_ctx_unboxed)(lbm_cid cid, lbm_value unboxed);
+
+	// Time since boot in system ticks. Resolution: 100 uS.
+	// Use ts_to_age_s to get the age of a timestamp in
+	// seconds. ts_to_age_s should handle overflows.
+	systime_t (*system_time_ticks)(void);
+	void (*sleep_ticks)(systime_t ticks);
+
+	// FOC Audio
+	bool (*foc_beep)(float freq, float time, float voltage);
+	bool (*foc_play_tone)(int channel, float freq, float voltage);
+	void (*foc_stop_audio)(bool reset);
+	bool (*foc_set_audio_sample_table)(int channel, const float *samples, int len);
+	const float* (*foc_get_audio_sample_table)(int channel);
+	bool (*foc_play_audio_samples)(const int8_t *samples, int num_samp, float f_samp, float voltage);
+
+	// Semaphore
+	lib_semaphore (*sem_create)(void); // Use VESC_IF->free on the semaphore when done with it
+	void (*sem_wait)(lib_semaphore);
+	void (*sem_signal)(lib_semaphore);
+	bool (*sem_wait_to)(lib_semaphore, systime_t); // Returns false on timeout
+	void (*sem_reset)(lib_semaphore);
+
+	// Functions below were added in firmware 6.06
+
+	// Set priority of current thread
+	// Range: -5 to 5, -5 is lowest, 0 is normal, 5 is highest
+	void (*thread_set_priority)(int priority);
+	// Disable shutdown (for hw with momentary button / auto shutdown support)
+	void (*shutdown_disable)(bool disable);
 } vesc_c_if;
 
 typedef struct {
@@ -600,11 +677,14 @@ typedef struct {
 	uint32_t base_addr;
 } lib_info;
 
+// System tick rate. Can be used to convert system ticks to time
+#define SYSTEM_TICK_RATE_HZ 10000
+
 // VESC-interface with function pointers
 #define VESC_IF		((vesc_c_if*)(0x1000F800))
 
 // Put this at the beginning of your source file
-#define HEADER		static volatile int __attribute__((__section__(".program_ptr"))) prog_ptr;
+#define HEADER		volatile int __attribute__((__section__(".program_ptr"))) prog_ptr;
 
 // Init function
 #define INIT_FUN	bool __attribute__((__section__(".init_fun"))) init
@@ -617,6 +697,8 @@ typedef struct {
 
 // The argument that was set in the init function (same as the one you get in stop_fun)
 #define ARG			(*VESC_IF->get_arg(PROG_ADDR))
+
+extern volatile int prog_ptr;
 
 #endif  // VESC_C_IF_H
 

@@ -22,7 +22,7 @@
 
 // Firmware version
 #define FW_VERSION_MAJOR			6
-#define FW_VERSION_MINOR			02
+#define FW_VERSION_MINOR			06
 // Set to 0 for building a release and iterate during beta test builds
 #define FW_TEST_VERSION_NUMBER		0
 
@@ -120,6 +120,12 @@
 
 // Current ADC to amperes factor
 #define FAC_CURRENT					((V_REG / 4095.0) / (CURRENT_SHUNT_RES * CURRENT_AMP_GAIN))
+#define FAC_CURRENT1				(FAC_CURRENT * CURRENT_CAL1)
+#define FAC_CURRENT2				(FAC_CURRENT * CURRENT_CAL2)
+#define FAC_CURRENT3				(FAC_CURRENT * CURRENT_CAL3)
+#define FAC_CURRENT1_M2				(FAC_CURRENT * CURRENT_CAL1_M2)
+#define FAC_CURRENT2_M2				(FAC_CURRENT * CURRENT_CAL2_M2)
+#define FAC_CURRENT3_M2				(FAC_CURRENT * CURRENT_CAL3_M2)
 
 #define VOLTAGE_TO_ADC_FACTOR	( VIN_R2 / (VIN_R2 + VIN_R1) ) * ( 4096.0 / V_REG )
 
@@ -182,7 +188,8 @@ bool conf_general_measure_flux_linkage(float current, float duty,
 uint8_t conf_general_calculate_deadtime(float deadtime_ns, float core_clock_freq);
 int conf_general_measure_flux_linkage_openloop(float current, float duty,
 											   float erpm_per_sec, float res, float ind, float *linkage,
-											   float *linkage_undriven, float *undriven_samples, bool *result);
+											   float *linkage_undriven, float *undriven_samples, bool *result,
+											   float *enc_offset, float *enc_ratio, bool *enc_inverted);
 int conf_general_autodetect_apply_sensors_foc(float current,
 											  bool store_mcconf_on_success, bool send_mcconf_on_success, int *result);
 void conf_general_calc_apply_foc_cc_kp_ki_gain(mc_configuration *mcconf, float tc);

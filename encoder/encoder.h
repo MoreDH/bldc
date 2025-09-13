@@ -1,5 +1,5 @@
 /*
-	Copyright 2016 - 2022 Benjamin Vedder	benjamin@vedder.se
+	Copyright 2016 - 2025 Benjamin Vedder	benjamin@vedder.se
 	Copyright 2022 Jakub Tomczak
 
 	This file is part of the VESC firmware.
@@ -33,6 +33,7 @@
 #include "enc_sincos.h"
 #include "enc_tle5012.h"
 #include "enc_ts5700n8501.h"
+#include "enc_pwm.h"
 
 // Functions
 bool encoder_init(volatile mc_configuration *conf);
@@ -46,6 +47,7 @@ void encoder_set_custom_callbacks (
 
 float encoder_read_deg(void);
 float encoder_read_deg_multiturn(void);
+void encoder_set_deg(float deg);
 encoder_type_t encoder_is_configured(void);
 bool encoder_index_found(void);
 void encoder_reset_multiturn(void);

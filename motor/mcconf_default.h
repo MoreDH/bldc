@@ -47,6 +47,12 @@
 #ifndef MCCONF_L_IN_CURRENT_MIN
 #define MCCONF_L_IN_CURRENT_MIN			-60.0	// Input current limit in Amperes (Lower)
 #endif
+#ifndef MCCONF_L_IN_CURRENT_MAP_START
+#define MCCONF_L_IN_CURRENT_MAP_START	1.0		// Input current to Q axis current limit map start
+#endif
+#ifndef MCCONF_L_IN_CURRENT_MAP_FILTER
+#define MCCONF_L_IN_CURRENT_MAP_FILTER	0.005	// Input current filter for the mapped limit
+#endif
 #ifndef MCCONF_L_MAX_ABS_CURRENT
 #define MCCONF_L_MAX_ABS_CURRENT		130.0	// The maximum absolute current above which a fault is generated
 #endif
@@ -61,6 +67,12 @@
 #endif
 #ifndef MCCONF_L_BATTERY_CUT_END
 #define MCCONF_L_BATTERY_CUT_END		8.0		// Limit the positive current completely at this voltage
+#endif
+#ifndef MCCONF_L_BATTERY_REGEN_CUT_START
+#define MCCONF_L_BATTERY_REGEN_CUT_START    1000.0	// Start limiting the regen current at this voltage
+#endif
+#ifndef MCCONF_L_BATTERY_REGEN_CUT_END
+#define MCCONF_L_BATTERY_REGEN_CUT_END  1100.0		// Limit the regen current completely at this voltage
 #endif
 #ifndef MCCONF_L_RPM_MAX
 #define MCCONF_L_RPM_MAX				100000.0	// The motor speed limit (Upper)
@@ -143,6 +155,9 @@
 #endif
 #ifndef MCCONF_S_PID_RAMP_ERPMS_S
 #define MCCONF_S_PID_RAMP_ERPMS_S		25000.0	// Speed input ramping, in ERPM/s
+#endif
+#ifndef MCCONF_S_PID_SPEED_SOURCE
+#define MCCONF_S_PID_SPEED_SOURCE		S_PID_SPEED_SRC_PLL
 #endif
 
 // Position PID parameters
@@ -311,7 +326,7 @@
 #define MCCONF_FOC_D_GAIN_SCALE_START	0.9		// Start reducing D axis current controller gain at this modulation
 #endif
 #ifndef MCCONF_FOC_D_GAIN_SCALE_MAX_MOD
-#define MCCONF_FOC_D_GAIN_SCALE_MAX_MOD	0.2		// D axis currnet controller gain at maximum modulation
+#define MCCONF_FOC_D_GAIN_SCALE_MAX_MOD	0.9		// D axis current controller gain at maximum modulation
 #endif
 #ifndef MCCONF_FOC_SL_OPENLOOP_HYST
 #define MCCONF_FOC_SL_OPENLOOP_HYST		0.1		// Time below min RPM to activate openloop (s)
@@ -358,17 +373,20 @@
 #ifndef MCCONF_FOC_HALL_INTERP_ERPM
 #define MCCONF_FOC_HALL_INTERP_ERPM		500		// Do not interpolate hall sensors below this ERPM
 #endif
+#ifndef MCCONF_FOC_SL_ERPM_START
+#define MCCONF_FOC_SL_ERPM_START		2500.0	// ERPM below which only sensored commutation is used
+#endif
 #ifndef MCCONF_FOC_SL_ERPM
-#define MCCONF_FOC_SL_ERPM				2500.0	// ERPM above which only the observer is used
+#define MCCONF_FOC_SL_ERPM				3500.0	// ERPM above which only the observer is used
 #endif
-#ifndef MCCONF_FOC_SAMPLE_V0_V7
-#define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
+#ifndef MCCONF_FOC_CONTROL_SAMPLE_MODE
+#define MCCONF_FOC_CONTROL_SAMPLE_MODE	FOC_CONTROL_SAMPLE_MODE_V0
 #endif
-#ifndef MCCONF_FOC_SAMPLE_HIGH_CURRENT
-#define MCCONF_FOC_SAMPLE_HIGH_CURRENT	false	// High current sampling mode (requires three shunts)
+#ifndef MCCONF_FOC_CURRENT_SAMPLE_MODE
+#define MCCONF_FOC_CURRENT_SAMPLE_MODE	FOC_CURRENT_SAMPLE_MODE_LONGEST_ZERO
 #endif
 #ifndef MCCONF_FOC_SAT_COMP_MODE
-#define MCCONF_FOC_SAT_COMP_MODE		SAT_COMP_LAMBDA		// Stator saturation compensation mode
+#define MCCONF_FOC_SAT_COMP_MODE		SAT_COMP_DISABLED		// Stator saturation compensation mode
 #endif
 #ifndef MCCONF_FOC_SAT_COMP
 #define MCCONF_FOC_SAT_COMP				0.0		// Stator saturation compensation factor
@@ -388,6 +406,15 @@
 #ifndef MCCONF_FOC_OBSERVER_TYPE
 #define MCCONF_FOC_OBSERVER_TYPE		FOC_OBSERVER_MXLEMMING_LAMBDA_COMP // Position observer type for FOC
 #endif
+#ifndef MCCONF_FOC_HFI_AMB_MODE
+#define MCCONF_FOC_HFI_AMB_MODE			FOC_AMB_MODE_SIX_VECTOR // HFI ambiguity resolution mode
+#endif
+#ifndef MCCONF_FOC_HFI_AMB_CURRENT
+#define MCCONF_FOC_HFI_AMB_CURRENT		60.0 // HFI ambiguity resolution current
+#endif
+#ifndef MCCONF_FOC_HFI_AMB_TRES
+#define MCCONF_FOC_HFI_AMB_TRES			15 // HFI ambiguity resolution threshold
+#endif
 #ifndef MCCONF_FOC_HFI_VOLTAGE_START
 #define MCCONF_FOC_HFI_VOLTAGE_START	20 // HFI voltage at start when resolving ambiguity
 #endif
@@ -396,6 +423,9 @@
 #endif
 #ifndef MCCONF_FOC_HFI_GAIN
 #define MCCONF_FOC_HFI_GAIN				0.3 // Correction gain for HFI V2
+#endif
+#ifndef MCCONF_FOC_HFI_MAX_ERR
+#define MCCONF_FOC_HFI_MAX_ERR			0.30 // Truncate HFI error at this value
 #endif
 #ifndef MCCONF_FOC_HFI_HYST
 #define MCCONF_FOC_HFI_HYST				0.0 // Sense vector offset hysteresis for HFI V2
@@ -415,8 +445,8 @@
 #ifndef MCCONF_FOC_HFI_SAMPLES
 #define MCCONF_FOC_HFI_SAMPLES			HFI_SAMPLES_16 // Samples per motor revolution for HFI
 #endif
-#ifndef MCCONF_FOC_OFFSETS_CAL_ON_BOOT
-#define MCCONF_FOC_OFFSETS_CAL_ON_BOOT	true // Measure offsets every boot
+#ifndef MCCONF_FOC_OFFSETS_CAL_MODE
+#define MCCONF_FOC_OFFSETS_CAL_MODE		1 // Offset calibration mode
 #endif
 #ifndef MCCONF_FOC_OFFSETS_CURRENT_0
 #define MCCONF_FOC_OFFSETS_CURRENT_0	2048.0 // Current 0 offset
@@ -470,7 +500,13 @@
 #define MCCONF_FOC_FW_Q_CURRENT_FACTOR	0.02 // Factor of the FW-current to feed to the Q-axis to slow motor down when setting 0 current
 #endif
 #ifndef MCCONF_FOC_SPEED_SOURCE
-#define MCCONF_FOC_SPEED_SOURCE			SPEED_SRC_OBSERVER // Position source for speed trackers
+#define MCCONF_FOC_SPEED_SOURCE			FOC_SPEED_SRC_CORRECTED // Position source for speed trackers
+#endif
+#ifndef MCCONF_FOC_SHORT_LS_ON_ZERO_DUTY
+#define MCCONF_FOC_SHORT_LS_ON_ZERO_DUTY false // Short low-side phases on zero duty cycle
+#endif
+#ifndef MCCONF_FOC_OVERMOD_FACTOR
+#define MCCONF_FOC_OVERMOD_FACTOR 		1.0 // Overmodulation factor
 #endif
 
 // GPD
@@ -561,7 +597,7 @@
 #define MCCONF_M_NTCX_PTCX_BASE_TEMP	25.0 // Custom NTC/PTC base temperature
 #endif
 #ifndef MCCONF_M_HALL_EXTRA_SAMPLES
-#define MCCONF_M_HALL_EXTRA_SAMPLES		1 // Extra samples for filtering when reading hall sensors
+#define MCCONF_M_HALL_EXTRA_SAMPLES		3 // Extra samples for filtering when reading hall sensors
 #endif
 #ifndef MCCONF_M_BATT_FILTER_CONST
 #define MCCONF_M_BATT_FILTER_CONST		45 // Battery level filter constant
@@ -608,6 +644,18 @@
 #endif
 #ifndef MCCONF_BMS_SOC_LIMIT_END
 #define MCCONF_BMS_SOC_LIMIT_END		0
+#endif
+#ifndef MCCONF_BMS_VMIN_LIMIT_START
+#define MCCONF_BMS_VMIN_LIMIT_START		2.9
+#endif
+#ifndef MCCONF_BMS_VMIN_LIMIT_END
+#define MCCONF_BMS_VMIN_LIMIT_END		2.5
+#endif
+#ifndef MCCONF_BMS_VMAX_LIMIT_START
+#define MCCONF_BMS_VMAX_LIMIT_START		4.2
+#endif
+#ifndef MCCONF_BMS_VMAX_LIMIT_END
+#define MCCONF_BMS_VMAX_LIMIT_END		4.3
 #endif
 #ifndef MCCONF_BMS_FWD_CAN_MODE
 #define MCCONF_BMS_FWD_CAN_MODE			BMS_FWD_CAN_MODE_DISABLED

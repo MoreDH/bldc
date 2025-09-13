@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <platform_mutex.h>
+#include <lbm_types.h>
 
 #define TOKENIZER_BUFFER_SIZE 257
 
@@ -42,6 +43,7 @@ typedef struct {
   bool comment;
   bool reader_closed;
   mutex_t lock;
+  bool mutex_initialized;
   // statistics
   unsigned int row;
   unsigned int column;
@@ -54,6 +56,7 @@ typedef struct {
   char *str;
   unsigned int length;
   unsigned int read_pos;
+  unsigned int write_pos;
   bool more;
   bool comment;
   bool reader_closed;
@@ -65,6 +68,7 @@ typedef struct {
  */
 typedef struct lbm_char_channel_s {
 
+  lbm_value dependency;
   void *state;
   bool (*more)(struct lbm_char_channel_s *chan);
   int  (*peek)(struct lbm_char_channel_s *chan, unsigned int n, char *res);
@@ -86,6 +90,8 @@ typedef struct lbm_char_channel_s {
   /* Statistics */
   unsigned int (*row)(struct lbm_char_channel_s *chan);
   unsigned int (*column)(struct lbm_char_channel_s *chan);
+
+  bool (*may_block)(struct lbm_char_channel_s *chan);
 
 } lbm_char_channel_t;
 
@@ -191,6 +197,10 @@ unsigned int lbm_channel_row(lbm_char_channel_t *chan);
  */
 unsigned int lbm_channel_column(lbm_char_channel_t *chan);
 
+/** query if a channel has a potentially blocking
+ * interface. Buffered channels do, string backed channels don't.
+ */
+bool lbm_channel_may_block(lbm_char_channel_t *chan);
 
 /* Interface */
 /** Create a channel from a string. This channel can be read from but not
@@ -203,6 +213,12 @@ void lbm_create_string_char_channel(lbm_string_channel_state_t *st,
                                     lbm_char_channel_t *chan,
                                     char *str);
 
+void lbm_create_string_char_channel_size(lbm_string_channel_state_t *st,
+                                         lbm_char_channel_t *chan,
+                                         char *str,
+                                         unsigned int size);
+
+
 /** Create a buffered channel that can be read from and written to.
  * \param st Pointer to lbm_buffered_channel_state_t.
  * \param chan Pointer to lbm_char_channel_t.
@@ -210,5 +226,12 @@ void lbm_create_string_char_channel(lbm_string_channel_state_t *st,
 void lbm_create_buffered_char_channel(lbm_buffered_channel_state_t *st,
                                       lbm_char_channel_t *chan);
 
+/** Set the dependency field of a channel.
+ * Garbage collection will ensure that the dependency is alive for
+ * at least as long as the channel itself.
+ * \param chan pointer to channel to set dependency in.
+ * \param dep dependency to associate with the channel.
+ */
+void lbm_char_channel_set_dependency(lbm_char_channel_t *chan, lbm_value dep);
 
 #endif

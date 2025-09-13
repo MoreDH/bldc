@@ -38,7 +38,9 @@ typedef enum {
 	ENCODER_TYPE_ABI,
 	ENCODER_TYPE_AS5x47U,
 	ENCODER_TYPE_BISSC,
-	ENCODER_TYPE_CUSTOM
+	ENCODER_TYPE_CUSTOM,
+	ENCODER_TYPE_PWM,
+	ENCODER_TYPE_PWM_ABI,
 } encoder_type_t;
 
 typedef struct {
@@ -53,6 +55,16 @@ typedef struct {
 	float spi_error_rate;
 	float last_enc_angle;
 	uint32_t last_update_time;
+	uint32_t resolver_void_packet_cnt;
+	uint32_t resolver_vel_packet_cnt;
+	float resolver_void_packet_error_rate;
+	float resolver_vel_packet_error_rate;
+	float resolver_LOT_peak_error_rate;
+	float resolver_LOS_peak_error_rate;
+	float resolver_DOS_peak_error_rate;
+	float resolver_SPI_peak_error_rate;
+	float resolver_VELread_peak_error_rate;
+	float resolver_VOIDspi_peak_error_rate;
 } AD2S1205_state;
 
 typedef struct {
@@ -113,7 +125,6 @@ typedef enum tle5012_errortypes {
 
 typedef struct {
 	volatile bool index_found;
-	volatile float last_enc_angle;
 	volatile int bad_pulses;
 } ABI_state;
 

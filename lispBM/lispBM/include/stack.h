@@ -1,6 +1,6 @@
 /** \file stack.h */
 /*
-    Copyright 2019 Joel Svensson        svenssonjoel@yahoo.se
+    Copyright 2019, 2024Joel Svensson        svenssonjoel@yahoo.se
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -34,7 +34,6 @@ typedef struct {
   lbm_uint* data;
   lbm_uint sp;
   lbm_uint size;
-  lbm_uint max_sp;
 } lbm_stack_t;
 
 /** Allocate a stack on the symbols and arrays memory.
@@ -52,6 +51,11 @@ int lbm_stack_allocate(lbm_stack_t *s, lbm_uint stack_size);
  * \return 1
  */
 int lbm_stack_create(lbm_stack_t *s, lbm_uint* data, lbm_uint size);
+/** Check maximum SP
+ * \param s Pointer to stack
+ * \return maximum SP written to in stack.
+ */  
+lbm_uint lbm_get_max_stack(lbm_stack_t *s);
 /** Free a stack allocated on the lispbm_memory.
  *
  * \param s Pointer to lbm_stack_t to free.
@@ -60,16 +64,8 @@ void lbm_stack_free(lbm_stack_t *s);
 /** Sets the stack SP to 0.
  *
  * \param s Stack to clear.
- * \return 1
  */
-int lbm_stack_clear(lbm_stack_t *s);
-/** Get a pointer to the nth element (from the top) of a stack.
- *
- * \param s Stack.
- * \param n Index.
- * \return Pointer into the stack or NULL.
- */
-lbm_uint *lbm_get_stack_ptr(lbm_stack_t *s, lbm_uint n);
+void lbm_stack_clear(lbm_stack_t *s);
 /** Drop n elements (from the top) of a stack.
  *
  * \param s Stack to drop elements from.
@@ -77,15 +73,6 @@ lbm_uint *lbm_get_stack_ptr(lbm_stack_t *s, lbm_uint n);
  * \return 1 on Success and 0 on failure.
  */
 int lbm_stack_drop(lbm_stack_t *s, lbm_uint n);
-
-/** Reserve place for n elements on the stack and
- *  move the stack pointer to the new top.
- * \param s Stack to reserve values on
- * \param n Number of values to reserve
- * \return Pointer into stack position of reserver value 0 or NULL
- *         on failure
- */
-lbm_uint *lbm_stack_reserve(lbm_stack_t *s, lbm_uint n);
 /** Push an element onto a stack.
  *
  * \param s Stack to push a value onto.
@@ -110,48 +97,6 @@ static inline int lbm_stack_is_empty(lbm_stack_t *s) {
   if (s->sp == 0) return 1;
   return 0;
 }
-
-/** Push 2 values to a stack.
- *
- * \param s Stack to push values onto.
- * \param val0 Is pushed first.
- * \param val1 Is pushed last.
- * \return 1 on success and 0 on failure (stack is full).
- */
-int lbm_push_2(lbm_stack_t *s, lbm_uint val0, lbm_uint val1);
-
-/** Push 3 values to a stack.
- *
- * \param s Stack to push values onto.
- * \param val0
- * \param val1
- * \param val2
- * \return 1 on success and 0 on failure (stack is full).
- */
-int lbm_push_3(lbm_stack_t *s, lbm_uint val0, lbm_uint val1, lbm_uint val2);
-
-/** Push 4 values to a stack.
- *
- * \param s Stack to push values onto.
- * \param val0
- * \param val1
- * \param val2
- * \param val3
- * \return 1 on success and 0 on failure (stack is full).
- */
-int lbm_push_4(lbm_stack_t *s, lbm_uint val0, lbm_uint val1, lbm_uint val2, lbm_uint val3);
-
-/** Push 5 values to a stack.
- *
- * \param s Stack to push values onto.
- * \param val0
- * \param val1
- * \param val2
- * \param val3
- * \param val4
- * \return 1 on success and 0 on failure (stack is full).
- */
-int lbm_push_5(lbm_stack_t *s, lbm_uint val0, lbm_uint val1, lbm_uint val2, lbm_uint val3, lbm_uint val4);
 
 /** Pop 2 values from a stack.
  *

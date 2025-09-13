@@ -23,6 +23,8 @@
  * @{
  */
 
+#pragma GCC optimize ("Os")
+
 /* Includes ------------------------------------------------------------------*/
 #include "eeprom.h"
 #include "flash_helper.h"

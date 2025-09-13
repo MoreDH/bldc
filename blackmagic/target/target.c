@@ -18,6 +18,8 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#pragma GCC optimize ("Os")
+
 #include "general.h"
 #include "target.h"
 #include "target_internal.h"

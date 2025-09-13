@@ -46,6 +46,8 @@
   ******************************************************************************
   */
 
+#pragma GCC optimize ("Os")
+
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_syscfg.h"
 #include "stm32f4xx_rcc.h"
@@ -244,6 +246,7 @@ void SYSCFG_BreakConfig(uint32_t SYSCFG_Break)
   SYSCFG->CFGR2 |= (uint32_t) SYSCFG_Break;
 }
 #endif /* STM32F410xx */
+
 /**
   * @}
   */

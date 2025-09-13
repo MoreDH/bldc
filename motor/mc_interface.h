@@ -97,6 +97,7 @@ float mc_interface_get_battery_level(float *wh_left);
 float mc_interface_get_speed(void);
 float mc_interface_get_distance(void);
 float mc_interface_get_distance_abs(void);
+void mc_interface_override_wheel_speed(bool ovr, float speed);
 
 setup_values mc_interface_get_setup_values(void);
 volatile gnss_data *mc_interface_gnss(void);
@@ -141,6 +142,8 @@ void mc_interface_adc_inj_int_handler(void);
 // External variables
 extern volatile uint16_t ADC_Value[];
 extern volatile float ADC_curr_norm_value[];
+extern volatile float ADC_curr_raw[];
+
 
 // Common fixed parameters
 #ifndef HW_DEAD_TIME_NSEC

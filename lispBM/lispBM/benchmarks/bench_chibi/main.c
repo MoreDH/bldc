@@ -26,6 +26,7 @@
 #include "chprintf.h"
 
 #include "lispbm.h"
+#include <lbm_image.h>
 
 /*
    (float)chVTTimeElapsedSinceX(x) / (float)CH_CFG_ST_FREQUENCY)
@@ -39,14 +40,14 @@
 #define EVAL_CPS_STACK_SIZE 256
 #define GC_STACK_SIZE 256
 #define PRINT_STACK_SIZE 256
-#define HEAP_SIZE 2048
-#define VARIABLE_STORAGE_SIZE 256
+#define HEAP_SIZE 4096
 #define EXTENSION_STORAGE_SIZE 256
+#define IMAGE_SIZE 4096
 
-uint32_t gc_stack_storage[GC_STACK_SIZE];
+uint32_t image_storage[IMAGE_SIZE];
+lbm_extension_t extensions[EXTENSION_STORAGE_SIZE];
 uint32_t print_stack_storage[PRINT_STACK_SIZE];
-lbm_value variable_storage[VARIABLE_STORAGE_SIZE];
-extension_fptr extension_storage[EXTENSION_STORAGE_SIZE];
+lbm_const_heap_t const_heap;
 
 static lbm_cons_t heap[HEAP_SIZE] __attribute__ ((aligned (8)));
 
@@ -57,6 +58,25 @@ static lbm_string_channel_state_t string_tok_state;
 static lbm_char_channel_t string_tok;
 
 BaseSequentialStream *chp = NULL;
+
+bool image_write(uint32_t w, int32_t ix, bool const_heap){
+  image_storage[ix] = w;
+  return true;
+}
+
+
+bool image_clear(void) {
+  memset(image_storage, 0x0, (IMAGE_SIZE * sizeof(uint32_t)));
+  return true;
+}
+
+void print_some(void) {
+  for (int i = IMAGE_SIZE - 1; i > IMAGE_SIZE - 6; i --) {
+    chprintf(chp,"im[%u] = %x\n", i, image_storage[i]);
+  }
+
+}
+
 
 int inputline(BaseSequentialStream *chp, char *buffer, int size) {
   int n = 0;
@@ -95,6 +115,46 @@ int inputline(BaseSequentialStream *chp, char *buffer, int size) {
 
 static char print_output[1024];
 
+void sleep_callback(uint32_t us) {
+  chThdSleepMicroseconds(us);
+}
+
+static void context_exists(eval_context_t *ctx, void *cid, void *b) {
+  if (ctx->id == *(lbm_cid*)cid) {
+    *(bool*)b = true;
+  }
+}
+
+static bool lbm_wait_ctx(lbm_cid cid, lbm_uint timeout_ms) {
+
+  bool exists;
+  uint32_t i = 0;
+
+  do {
+    exists = false;
+    lbm_blocked_iterator(context_exists, &cid, &exists);
+    lbm_running_iterator(context_exists, &cid, &exists);
+
+    eval_context_t *ctx_running = lbm_get_current_context();
+
+    if (ctx_running &&
+        ctx_running->id == cid) {
+      exists = true;
+    }
+
+    if (exists) {
+       if (sleep_callback) {
+         sleep_callback(10);
+       }
+       if (timeout_ms > 0) i ++;
+    }
+  } while (exists && i < timeout_ms);
+
+  if (exists) return false;
+  return true;
+}
+
+
 void done_callback(eval_context_t *ctx) {
 
   char *output = print_output;
@@ -118,10 +178,6 @@ uint32_t timestamp_callback(void) {
   return ts;
 }
 
-void sleep_callback(uint32_t us) {
-  chThdSleepMicroseconds(us);
-}
-
 static THD_FUNCTION(eval, arg) {
   (void) arg;
   lbm_run_eval();
@@ -137,14 +193,7 @@ lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 
     if (lbm_is_ptr(t) && lbm_type_of(t) == LBM_TYPE_ARRAY) {
       lbm_array_header_t *array = (lbm_array_header_t *)lbm_car(t);
-      switch (array->elt_type){
-      case LBM_TYPE_CHAR:
-        chprintf(chp,"%s", (char*)array + 8);
-        break;
-      default:
-        return lbm_enc_sym(SYM_NIL);
-        break;
-      }
+      chprintf(chp,"%s", (char*)array + 8);
     } else if (lbm_type_of(t) == LBM_TYPE_CHAR) {
       if (lbm_dec_char(t) =='\n') {
         chprintf(chp, "\r\n");
@@ -161,7 +210,8 @@ lbm_value ext_print(lbm_value *args, lbm_uint argn) {
 
 static char str[1024];
 static char outbuf[1024];
-static char file_buffer[2048];
+#define FILE_LEN 8192
+static char file_buffer[FILE_LEN];
 
 void print_ctx_info(eval_context_t *ctx, void *arg1, void *arg2) {
   (void)arg2;
@@ -206,11 +256,12 @@ int main(void) {
   chThdSleepMilliseconds(2000);
 
   if (!lbm_init(heap, HEAP_SIZE,
-                gc_stack_storage, GC_STACK_SIZE,
                 memory_array, LBM_MEMORY_SIZE_8K,
                 bitmap_array, LBM_MEMORY_BITMAP_SIZE_8K,
-                print_stack_storage, PRINT_STACK_SIZE,
-                extension_storage, EXTENSION_STORAGE_SIZE)) {
+                GC_STACK_SIZE,
+                PRINT_STACK_SIZE,
+                extensions,
+                EXTENSION_STORAGE_SIZE)) {
 
     chprintf(chp,"LispBM Init failed.\r\n");
     return 0;
@@ -220,8 +271,18 @@ int main(void) {
   lbm_set_timestamp_us_callback(timestamp_callback);
   lbm_set_usleep_callback(sleep_callback);
 
-  lbm_variables_init(variable_storage, VARIABLE_STORAGE_SIZE);
+  lbm_set_verbose(true);
+  
+  lbm_image_init(image_storage,
+                 IMAGE_SIZE, 
+                 image_write);
 
+  image_clear();                // all benchies on a fresh image.
+  lbm_image_create("benchies");
+  if (!lbm_image_exists()) chprintf(chp, "Error creating image\n");
+  if (!lbm_image_boot()) chprintf(chp, "Error booting image\n");
+  lbm_add_eval_symbols();
+  
   res = lbm_add_extension("print", ext_print);
   if (res)
     chprintf(chp,"Extension added.\r\n");
@@ -260,13 +321,16 @@ int main(void) {
       chprintf(chp,"------------------------------------------------------------\r\n");
       memset(outbuf,0, 1024);
     } else if (strncmp(str, ":env", 4) == 0) {
-      lbm_value curr = *lbm_get_env_ptr();
-      chprintf(chp,"Environment:\r\n");
-      while (lbm_type_of(curr) == LBM_TYPE_CONS) {
-        res = lbm_print_value(outbuf,1024, lbm_car(curr));
-        curr = lbm_cdr(curr);
+      lbm_value *glob_env = lbm_get_global_env();
+      for (int i = 0; i < GLOBAL_ENV_ROOTS; i ++) {
+        lbm_value curr = glob_env[i];
+        chprintf(chp,"Global Environment [%d]:\r\n", i);
+        while (lbm_type_of(curr) == LBM_TYPE_CONS) {
+          res = lbm_print_value(outbuf,1024, lbm_car(curr));
+          curr = lbm_cdr(curr);
 
-        chprintf(chp,"  %s \r\n", outbuf);
+          chprintf(chp,"  %s \r\n", outbuf);
+        }
       }
     } else if (strncmp(str, ":threads", 8) == 0) {
       thread_t *tp;
@@ -308,13 +372,21 @@ int main(void) {
       }
 
       lbm_init(heap, HEAP_SIZE,
-               gc_stack_storage, GC_STACK_SIZE,
                memory_array, LBM_MEMORY_SIZE_8K,
                bitmap_array, LBM_MEMORY_BITMAP_SIZE_8K,
-               print_stack_storage, PRINT_STACK_SIZE,
-               extension_storage, EXTENSION_STORAGE_SIZE);
+               GC_STACK_SIZE,
+               PRINT_STACK_SIZE,
+               extensions,
+               EXTENSION_STORAGE_SIZE);
+      
+      lbm_image_init(image_storage,
+                     IMAGE_SIZE, 
+                     image_write);
 
-      lbm_variables_init(variable_storage, VARIABLE_STORAGE_SIZE);
+      image_clear();                // all benchies on a fresh image.
+      lbm_image_create("benchies");
+      if (!lbm_image_exists()) chprintf(chp, "Error creating image\n");
+      if (!lbm_image_boot()) chprintf(chp, "Error booting image\n");
 
       lbm_add_extension("print", ext_print);
 
@@ -322,11 +394,11 @@ int main(void) {
 
       break;
     } else if (strncmp(str, ":read", 5) == 0) {
-      memset(file_buffer, 0, 2048);
+      memset(file_buffer, 0, FILE_LEN);
       bool done = false;
       int c;
 
-      for (int i = 0; i < 2048; i ++) {
+      for (int i = 0; i < FILE_LEN; i ++) {
         c = streamGet(chp);
 
         if (c == 4 || c == 26 || c == STM_RESET) {
@@ -378,9 +450,9 @@ int main(void) {
         lbm_get_heap_state(&heap_state);
 
         chprintf(chp, "gc invocations: %d\r\n", heap_state.gc_num);
-        chprintf(chp, "gc time avg: %f\r\n", (float)heap_state.gc_time_acc / (float)heap_state.gc_num);
-        chprintf(chp, "gc min time: %u\r\n", heap_state.gc_min_duration);
-        chprintf(chp, "gc max time: %u\r\n", heap_state.gc_max_duration);
+        chprintf(chp, "gc time avg: %f\r\n", 0.0);
+        chprintf(chp, "gc min time: %u\r\n", 0);
+        chprintf(chp, "gc max time: %u\r\n", 0);
         chprintf(chp, "gc least free: %u\r\n", heap_state.gc_least_free);
       }
     } else {

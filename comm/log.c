@@ -17,6 +17,8 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
     */
 
+#pragma GCC optimize ("Os")
+
 #include <string.h>
 #include "log.h"
 #include "comm_can.h"

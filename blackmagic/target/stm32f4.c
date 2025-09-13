@@ -32,6 +32,8 @@
  *    manual
  */
 
+#pragma GCC optimize ("Os")
+
 #include "general.h"
 #include "target.h"
 #include "target_internal.h"

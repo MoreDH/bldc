@@ -21,6 +21,9 @@
 /* This file implements the transport generic functions of the
  * ARM Debug Interface v5 Architecure Specification, ARM doc IHI0031A.
  */
+
+#pragma GCC optimize ("Os")
+
 #include "general.h"
 #include "target.h"
 #include "target_internal.h"

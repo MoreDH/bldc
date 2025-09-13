@@ -24,6 +24,8 @@
  * Documentation: http://uavcan.org/Implementations/Libcanard
  */
 
+#pragma GCC optimize ("Os")
+
 #include "canard_internals.h"
 #include <string.h>
 

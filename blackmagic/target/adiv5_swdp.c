@@ -22,6 +22,8 @@
  * ARM Debug Interface v5 Architecure Specification, ARM doc IHI0031A.
  */
 
+#pragma GCC optimize ("Os")
+
 #include "general.h"
 #include "exception.h"
 #include "adiv5.h"
@@ -181,4 +183,3 @@ static void adiv5_swdp_abort(ADIv5_DP_t *dp, uint32_t abort)
 {
 	adiv5_dp_write(dp, ADIV5_DP_ABORT, abort);
 }
-
