@@ -157,10 +157,10 @@
 #define MCCONF_HALL_ERPM 2000
 
 // Current KP
-#define MCCONF_FOC_CURRENT_KP 0.2025
+#define MCCONF_FOC_CURRENT_KP 0.2542
 
 // Current KI
-#define MCCONF_FOC_CURRENT_KI 48.58
+#define MCCONF_FOC_CURRENT_KI 57.19
 
 // Zero Vector Frequency
 #define MCCONF_FOC_F_ZV 36000
@@ -187,19 +187,19 @@
 #define MCCONF_FOC_PLL_KI 30000
 
 // Motor Inductance (L)
-#define MCCONF_FOC_MOTOR_L 0.00020252
+#define MCCONF_FOC_MOTOR_L 0.00025421
 
 // Motor Inductance Difference (Ld - Lq)
-#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 0
+#define MCCONF_FOC_MOTOR_LD_LQ_DIFF 0.00012039
 
 // Motor Resistance (R)
-#define MCCONF_FOC_MOTOR_R 0.04858
+#define MCCONF_FOC_MOTOR_R 0.05719
 
 // Motor Flux Linkage (λ)
-#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.014105
+#define MCCONF_FOC_MOTOR_FLUX_LINKAGE 0.013626
 
 // Observer Gain (x1M)
-#define MCCONF_FOC_OBSERVER_GAIN 5.03e+06
+#define MCCONF_FOC_OBSERVER_GAIN 5.39e+06
 
 // Observer Gain At Minimum Duty
 #define MCCONF_FOC_OBSERVER_GAIN_SLOW 0.05
@@ -379,7 +379,7 @@
 #define MCCONF_FOC_MTPA_MODE 0
 
 // Field Weakening Current Max
-#define MCCONF_FOC_FW_CURRENT_MAX 7
+#define MCCONF_FOC_FW_CURRENT_MAX 0
 
 // Field Weakening Duty Start
 #define MCCONF_FOC_FW_DUTY_START 0.9

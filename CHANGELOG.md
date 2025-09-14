@@ -1,4 +1,26 @@
 ### 6.06
+#### 2025.09.13 MoreDH
+* Adjust CAN timings so cadence updates more often.
+* PAS mode adjustments for 9 level (1, 2, 2.3, 2.5, 2.8, 3.0, 4.5, 6.0, 9.0).
+* Cadence display now shows cadence.
+* Range display now shows rider to motor wh ratio in percent.
+* kcal display now shows motor Wh.
+* Defaults: 30M shutdown, max poly throttle linearity, PAS ramp time 0.4/0.3s, no field weakening, motor retune.
+* Tuned pedal torque low pass filter to 0.65 hz (0.8 hz with lights on).
+* PAS mode setup for 5 level DPC245 E/T/S/S+/B (2/9, 3/9, 4/9, 6/9, 9/9)
+* HW_GATE_DRIVER_SUPPLY_MAX_VOLTAGE 17.6 to allow for DPC245 display
+* current display (bar on right) now shows rider torque.
+* PAS output adjusted for Battery SOC%.
+* Forced PAS neg ramp time to 0.5s.
+* PAS pedal torque sensor rescaled to full scale of SR PA212.32.ST.C 1.1 / SRPA232CF10101.1.
+* New CAN communication scheme to be more like original controller (attempt to minimize ERROR 30).
+* Battery SOC% is now mapped from 4.19 to 3.0V.
+* PAS pedal timeout 5 -> 2.5s.
+* More consistent PAS loop times.
+	
+---
+
+### 6.06
 #### 2025-08-18
 * LispBM:
 	* New core extansions, optimization and much more unit testing.
@@ -80,6 +102,8 @@
 * Removed GPDrive.
 * FOC: Option to short phases on 0 duty.
 * FOC: Added MXV observer.
+
+---
 
 ### 6.02
 #### 2023-03-12

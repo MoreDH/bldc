@@ -363,16 +363,28 @@ float hw_get_mosfet_temp_filtered(void) {
 	return mosfet_temp_filtered;
 }
 
+float shutdown_filtered = 0.0;
 bool hw_luna_m600_shutdown_button_down(void) {
-	static float button_filtered = 0.0;
-	UTILS_LP_FAST(button_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), 0.01);
-	return (button_filtered < 1.35);
+	float dt_shutdown = 0.01;
+	const float lpf_hz = 1.0;
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	float lpf_constant = dt_shutdown / (dt_shutdown + rc);
+	UTILS_LP_FAST(shutdown_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), lpf_constant);
+	return shutdown_filtered < 1.0; // 2.9V none, 1.4V minus, 0.5V shutdown, 0.1V minus and shutdown
 }
 
+float hw_luna_m600_shutdown_button_value(void) {
+	return shutdown_filtered;
+}
+
+float minus_filtered = 0.0;
 bool hw_luna_m600_minus_button_down(void) {
-	static float button_filtered = 0.0;
-	UTILS_LP_FAST(button_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), 0.05);
-	return (button_filtered >= 1.35 && button_filtered < 2.0);
+	float dt_display = 0.005;
+	const float lpf_hz = 1.0;
+	float rc = 1.0 / (2.0 * M_PI * lpf_hz);
+	float lpf_constant = dt_display / (dt_display + rc);
+	UTILS_LP_FAST(minus_filtered, GET_ON_OFF_BUTTON_VOLTAGE(), lpf_constant);
+	return minus_filtered >= 1.0 && minus_filtered < 2.0; // 2.9V none, 1.4V minus, 0.5V shutdown, 0.1V minus and shutdown
 }
 
 static void terminal_cmd_set_m600_use_fixed_throttle_level(int argc, const char **argv) {
@@ -407,8 +419,12 @@ bool hw_m600_has_fixed_throttle_level(void) {
 	}
 }
 
-float hw_get_PAS_torque(void) {
-	return luna_canbus_get_PAS_torque();
+float hw_get_pedal_torque(void) {
+	return luna_canbus_get_pedal_torque();
+}
+
+uint32_t hw_get_torque_dt(void) {
+	return luna_canbus_get_pedal_torque_dt();
 }
 
 uint32_t hw_calibrate_torque_sensor(void) {
@@ -446,7 +462,7 @@ static void terminal_cmd_m600_get_torque_sensor_info(int argc, const char **argv
 	(void)argv;
 
 	commands_printf("Torque sensor output: %d", get_torque_sensor_output());
-	commands_printf("Torque sensor output (%%): %.2f", (double)luna_canbus_get_PAS_torque());
+	commands_printf("Torque sensor output (%%): %.2f", (double)luna_canbus_get_pedal_torque());
 	commands_printf("Torque sensor lower range: %d", get_torque_sensor_lower_range());
 	commands_printf("Torque sensor upper range: %d", get_torque_sensor_upper_range());
 	commands_printf("Torque sensor deadband: %.2f (assistance starts at %d)",	(double)get_torque_sensor_deadband(),
@@ -546,3 +562,25 @@ static void hw_override_pairing_done(void) {
 		mempools_free_appconf(appconf);
 	}
 }
+
+void hw_setup_pedal_encoder(void) {
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
+
+	palSetPadMode(HW_PAS1_PORT, HW_PAS1_PIN, PAL_MODE_ALTERNATE(GPIO_AF_TIM3) | PAL_MODE_INPUT_PULLUP);
+	palSetPadMode(HW_PAS2_PORT, HW_PAS2_PIN, PAL_MODE_ALTERNATE(GPIO_AF_TIM3) | PAL_MODE_INPUT_PULLUP);
+	
+	TIM_TimeBaseInitTypeDef init;
+	init.TIM_Prescaler = 0;
+	init.TIM_CounterMode = TIM_CounterMode_Up;
+	init.TIM_Period = 65535;
+	init.TIM_ClockDivision = TIM_CKD_DIV1;
+	TIM_TimeBaseInit(TIM3, &init);
+	TIM_EncoderInterfaceConfig(TIM3, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+
+	TIM_SelectOutputTrigger(TIM3, TIM_TRGOSource_Reset);
+	TIM_SelectMasterSlaveMode(TIM3, TIM_MasterSlaveMode_Disable);
+	TIM_Cmd(TIM3, ENABLE);
+}
+
+uint16_t hw_get_pedal_encoder_count(void) { return TIM3->CNT; }

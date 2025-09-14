@@ -23,7 +23,8 @@
 #include "stdint.h"
 
 void luna_canbus_start(void);
-float luna_canbus_get_PAS_torque(void);
+float luna_canbus_get_pedal_torque(void);
+uint32_t luna_canbus_get_pedal_torque_dt(void);
 float get_encoder_error(void);
 float get_torque_sensor_deadband(void);
 int32_t get_torque_sensor_output(void);

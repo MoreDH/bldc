@@ -187,6 +187,7 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 	} else if (strcmp(argv[0], "tim") == 0) {
 		chSysLock();
 		volatile int t1_cnt = TIM1->CNT;
+		volatile int t3_cnt = TIM3->CNT;
 		volatile int t8_cnt = TIM8->CNT;
 		volatile int t1_cnt2 = TIM1->CNT;
 		volatile int t2_cnt = TIM2->CNT;
@@ -203,6 +204,7 @@ __attribute__((section(".text2"))) void terminal_process_string(char *str) {
 		int current2_samp = TIM8->CCR2;
 
 		commands_printf("Tim1 CNT: %i", t1_cnt);
+		commands_printf("Tim3 CNT: %i", t3_cnt);
 		commands_printf("Tim8 CNT: %i", t8_cnt);
 		commands_printf("Tim2 CNT: %i", t2_cnt);
 		commands_printf("Amount off CNT: %i",top - (2*t8_cnt + t1_cnt + t1_cnt2)/2);

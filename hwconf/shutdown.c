@@ -31,7 +31,7 @@
 #elif defined(HW_SHUTDOWN_HOLD_ON)
 
 // Private variables
-bool volatile m_button_pressed = false;
+bool volatile m_shutdown_pressed = false;
 static volatile float m_inactivity_time = 0.0;
 static THD_WORKING_AREA(shutdown_thread_wa, 256);
 static mutex_t m_sample_mutex;
@@ -53,7 +53,7 @@ void shutdown_reset_timer(void) {
 }
 
 bool shutdown_button_pressed(void) {
-	return m_button_pressed;
+	return m_shutdown_pressed;
 }
 
 float shutdown_get_inactivity_time(void) {
@@ -112,38 +112,36 @@ static THD_FUNCTION(shutdown_thread, arg) {
 	uint64_t odometer_old = mc_interface_get_odometer();
 
 	for(;;) {
-		float dt = (float)chVTTimeElapsedSinceX(last_iteration_time) / (float)CH_CFG_ST_FREQUENCY;
-		last_iteration_time = chVTGetSystemTimeX();
+		float dt = chVTTimeElapsedSinceX(last_iteration_time) / (float)CH_CFG_ST_FREQUENCY;
+		last_iteration_time = chVTGetSystemTime();
 
 		chMtxLock(&m_sample_mutex);
-
-		if (m_sampling_disabled) {
+		if( m_sampling_disabled ) {
 			chMtxUnlock(&m_sample_mutex);
 			chThdSleepMilliseconds(10);
 			continue;
 		}
 
-		bool sample = HW_SAMPLE_SHUTDOWN();
+		bool shutdown_pressed = HW_SAMPLE_SHUTDOWN();
 		chMtxUnlock(&m_sample_mutex);
-		bool clicked = m_button_pressed && !sample;
-		m_button_pressed = sample;
+		bool shutdown_released = m_shutdown_pressed && !shutdown_pressed;
+		m_shutdown_pressed = shutdown_pressed;
 
 		const app_configuration *conf = app_get_configuration();
 
 		// Note: When the gates are enabled, the push to start function
 		// will prevent the regulator from shutting down. Therefore, the
 		// gate driver has to be disabled.
-
-		switch (conf->shutdown_mode) {
+		switch( conf->shutdown_mode ) {
 		case SHUTDOWN_MODE_ALWAYS_OFF:
 #ifdef HW_SHUTDOWN_NO
-			if (m_button_pressed) {
+			if (m_shutdown_pressed) {
 				HW_SHUTDOWN_HOLD_ON();
 			} else {
 				do_shutdown(false);
 			}
 #else
-			if (m_button_pressed) {
+			if( shutdown_pressed ) {
 				gates_disabled_here = do_shutdown(true);
 			}
 #endif
@@ -166,7 +164,7 @@ static THD_FUNCTION(shutdown_thread, arg) {
 			break;
 
 		default:
-			if (clicked) {
+			if( shutdown_released ) {
 				gates_disabled_here = do_shutdown(false);
 			}
 			break;
@@ -174,17 +172,17 @@ static THD_FUNCTION(shutdown_thread, arg) {
 
 		// If disabling the gates did not shut the VESC down within
 		// 2 seconds, enable the gates again.
-		if (gates_disabled_here && m_button_pressed) {
+		if( gates_disabled_here && shutdown_pressed ) {
 			gate_disable_time += dt;
 
-			if (gate_disable_time > 2.0) {
+			if( gate_disable_time > 2.0 ) {
 				ENABLE_GATE();
 				gates_disabled_here = false;
 				gate_disable_time = 0.0;
 			}
 		}
 
-		if (conf->shutdown_mode >= SHUTDOWN_MODE_OFF_AFTER_10S) {
+		if( conf->shutdown_mode >= SHUTDOWN_MODE_OFF_AFTER_10S ) {
 			m_inactivity_time += dt;
 
 			float shutdown_timeout = 0.0;
@@ -199,7 +197,7 @@ static THD_FUNCTION(shutdown_thread, arg) {
 			default: break;
 			}
 
-			if (m_inactivity_time >= shutdown_timeout && m_button_pressed) {
+			if( m_inactivity_time >= shutdown_timeout && shutdown_pressed ) {
 				gates_disabled_here = do_shutdown(false);
 			}
 		}
